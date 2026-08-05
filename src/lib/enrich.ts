@@ -8,9 +8,13 @@ import { fetchPlaceDetails, PlacesApiError, searchPlaceByText } from "./places";
 import { parseMapsUrl } from "./maps-url";
 
 export type EnrichResult = {
+  /** How many places needed enriching when the run started. */
+  pending: number;
   attempted: number;
   enriched: number;
   failed: number;
+  /** Set when the run stopped early because every request would fail the same way. */
+  abortedReason: string | null;
   errors: string[];
 };
 
@@ -29,16 +33,19 @@ export async function enrichList(listId: string): Promise<EnrichResult> {
   const urlByPlaceRef = await getEntryUrlsByPlaceRef(listId);
 
   const result: EnrichResult = {
-    attempted: pending.length,
+    pending: pending.length,
+    attempted: 0,
     enriched: 0,
     failed: 0,
+    abortedReason: null,
     errors: [],
   };
 
   let cursor = 0;
   const workers = Array.from({ length: Math.min(CONCURRENCY, pending.length) }, async () => {
-    while (cursor < pending.length) {
+    while (cursor < pending.length && result.abortedReason === null) {
       const item = pending[cursor++];
+      result.attempted++;
       try {
         const data = await lookup(item, urlByPlaceRef.get(item.placeRef));
         if (data) {
@@ -56,9 +63,16 @@ export async function enrichList(listId: string): Promise<EnrichResult> {
         result.errors.push(`${item.title}: ${message}`);
 
         // Auth and quota failures will hit every remaining row identically —
-        // stop rather than burn the rest of the list on the same error.
+        // stop rather than burn the rest of the list on the same error, and
+        // say so, since "0 of 37" otherwise implies all 37 were tried.
         if (err instanceof PlacesApiError && [401, 403, 429].includes(err.status)) {
-          cursor = pending.length;
+          result.abortedReason =
+            err.status === 429
+              ? `Google rate-limited the request: ${message}`
+              : `Google rejected the API key (HTTP ${err.status}): ${message}`;
+          // Logged server-side too — Railway's deploy logs are where you'd
+          // look when the browser only shows a summary.
+          console.error("[enrich] aborting run:", err.status, message);
         }
       }
     }

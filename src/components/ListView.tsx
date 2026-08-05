@@ -50,12 +50,27 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Enrichment failed.");
 
-      setBanner({
-        kind: data.failed > 0 ? "info" : "success",
-        text:
-          `Enriched ${data.enriched} of ${data.attempted} places.` +
-          (data.failed > 0 ? ` ${data.failed} failed — ${data.errors[0] ?? ""}` : ""),
-      });
+      if (data.abortedReason) {
+        // Every remaining request would fail identically, so the run stopped.
+        // Report what Google actually said rather than a bare count.
+        const untried = data.pending - data.attempted;
+        setBanner({
+          kind: "error",
+          text:
+            `Stopped after ${data.attempted} of ${data.pending} places — ${data.abortedReason}` +
+            (untried > 0 ? ` The remaining ${untried} weren't attempted.` : ""),
+        });
+      } else if (data.failed > 0) {
+        setBanner({
+          kind: "info",
+          text: `Enriched ${data.enriched} of ${data.pending}. ${data.failed} couldn't be matched: ${data.errors.slice(0, 3).join("; ")}`,
+        });
+      } else {
+        setBanner({
+          kind: "success",
+          text: `Enriched all ${data.enriched} place${data.enriched === 1 ? "" : "s"}.`,
+        });
+      }
       router.refresh();
     } catch (err) {
       setBanner({
