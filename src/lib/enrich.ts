@@ -1,0 +1,84 @@
+import {
+  getEntryUrlsByPlaceRef,
+  getUnenrichedPlaces,
+  markPlaceEnrichFailed,
+  updatePlaceFromGoogle,
+} from "./db";
+import { fetchPlaceDetails, PlacesApiError, searchPlaceByText } from "./places";
+import { parseMapsUrl } from "./maps-url";
+
+export type EnrichResult = {
+  attempted: number;
+  enriched: number;
+  failed: number;
+  errors: string[];
+};
+
+/** Google's default quota is generous but not unlimited; stay well under it. */
+const CONCURRENCY = 5;
+
+/**
+ * Enriches every not-yet-enriched place in a list. Already-enriched places are
+ * skipped entirely, so re-running after a partial failure only pays for what
+ * is still missing.
+ */
+export async function enrichList(listId: string): Promise<EnrichResult> {
+  const pending = await getUnenrichedPlaces(listId);
+  const urlByPlaceRef = await getEntryUrlsByPlaceRef(listId);
+
+  const result: EnrichResult = {
+    attempted: pending.length,
+    enriched: 0,
+    failed: 0,
+    errors: [],
+  };
+
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, pending.length) }, async () => {
+    while (cursor < pending.length) {
+      const item = pending[cursor++];
+      try {
+        const data = await lookup(item, urlByPlaceRef.get(item.placeRef));
+        if (data) {
+          await updatePlaceFromGoogle(item.placeRef, data);
+          result.enriched++;
+        } else {
+          await markPlaceEnrichFailed(item.placeRef, "No match found on Google Maps");
+          result.failed++;
+          result.errors.push(`${item.title}: no match found`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await markPlaceEnrichFailed(item.placeRef, message);
+        result.failed++;
+        result.errors.push(`${item.title}: ${message}`);
+
+        // Auth and quota failures will hit every remaining row identically —
+        // stop rather than burn the rest of the list on the same error.
+        if (err instanceof PlacesApiError && [401, 403, 429].includes(err.status)) {
+          cursor = pending.length;
+        }
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  // Dedupe the error list so one systemic failure doesn't produce 200 lines.
+  result.errors = [...new Set(result.errors)].slice(0, 25);
+  return result;
+}
+
+async function lookup(
+  item: { placeRef: string; placeId: string | null; title: string },
+  sourceUrl: string | undefined,
+) {
+  if (item.placeId) return fetchPlaceDetails(item.placeId);
+
+  const parsed = sourceUrl ? parseMapsUrl(sourceUrl) : null;
+  const bias =
+    parsed?.lat != null && parsed?.lng != null
+      ? { lat: parsed.lat, lng: parsed.lng }
+      : undefined;
+
+  return searchPlaceByText(item.title, bias);
+}

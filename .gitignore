@@ -32,6 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# local database (legacy SQLite; superseded by Postgres)
+/data
+
+# local claude code settings
+.claude/settings.local.json
 
 # vercel
 .vercel
