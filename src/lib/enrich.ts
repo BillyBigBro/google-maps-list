@@ -14,6 +14,8 @@ export type EnrichResult = {
   errors: string[];
 };
 
+type Pending = Awaited<ReturnType<typeof getUnenrichedPlaces>>[number];
+
 /** Google's default quota is generous but not unlimited; stay well under it. */
 const CONCURRENCY = 5;
 
@@ -68,17 +70,20 @@ export async function enrichList(listId: string): Promise<EnrichResult> {
   return result;
 }
 
-async function lookup(
-  item: { placeRef: string; placeId: string | null; title: string },
-  sourceUrl: string | undefined,
-) {
+/**
+ * Share-link imports arrive with an address and coordinates already, which
+ * makes the text search far more precise than a bare name — "Blue Bottle
+ * Coffee" alone would match almost anywhere.
+ */
+async function lookup(item: Pending, sourceUrl: string | undefined) {
   if (item.placeId) return fetchPlaceDetails(item.placeId);
 
   const parsed = sourceUrl ? parseMapsUrl(sourceUrl) : null;
-  const bias =
-    parsed?.lat != null && parsed?.lng != null
-      ? { lat: parsed.lat, lng: parsed.lng }
-      : undefined;
+  const lat = item.lat ?? parsed?.lat ?? null;
+  const lng = item.lng ?? parsed?.lng ?? null;
 
-  return searchPlaceByText(item.title, bias);
+  const queryText = item.address ? `${item.title}, ${item.address}` : item.title;
+  const bias = lat != null && lng != null ? { lat, lng } : undefined;
+
+  return searchPlaceByText(queryText, bias);
 }

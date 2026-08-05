@@ -20,12 +20,11 @@ export async function POST(_request: Request, { params }: Ctx) {
     return NextResponse.json(
       {
         error:
-          "No GOOGLE_MAPS_API_KEY configured. Add it to .env.local and restart the dev server to enable enrichment.",
+          "No GOOGLE_MAPS_API_KEY configured. Add it to your environment and restart to enable enrichment.",
       },
       { status: 400 },
     );
   }
 
-  const result = await enrichList(id);
-  return NextResponse.json(result);
+  return NextResponse.json(await enrichList(id));
 }

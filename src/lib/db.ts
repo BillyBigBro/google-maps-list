@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { Pool, type QueryResultRow } from "pg";
 import type { ListEntry, ListRow, Place, PlaceList, PlaceStatus } from "./types";
 
@@ -55,6 +55,21 @@ CREATE TABLE IF NOT EXISTS list_entries (
 CREATE INDEX IF NOT EXISTS idx_entries_list ON list_entries(list_id);
 CREATE INDEX IF NOT EXISTS idx_places_place_id ON places(place_id);
 `;
+
+const ID_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/**
+ * A list's id is also its share token — it appears in the URL and anyone
+ * holding it can view and edit that list. 16 characters of this alphabet is
+ * ~93 bits of entropy, so it is not practically guessable. Lookalike
+ * characters (0/O, 1/l/I) are excluded so ids survive being read aloud.
+ */
+export function newListId(): string {
+  const bytes = randomBytes(16);
+  let out = "";
+  for (const byte of bytes) out += ID_ALPHABET[byte % ID_ALPHABET.length];
+  return out;
+}
 
 /**
  * Next re-evaluates modules on hot reload, so the pool is cached on globalThis
@@ -171,7 +186,7 @@ export async function createList(input: {
   source: PlaceList["source"];
   sourceUrl?: string | null;
 }): Promise<string> {
-  const id = randomUUID();
+  const id = newListId();
   await query(
     `INSERT INTO lists (id, name, source, source_url) VALUES ($1, $2, $3, $4)`,
     [id, input.name, input.source, input.sourceUrl ?? null],
@@ -179,19 +194,17 @@ export async function createList(input: {
   return id;
 }
 
-export async function getLists(): Promise<PlaceList[]> {
-  const rows = await query(
-    `SELECT l.id, l.name, l.source, l.source_url, l.created_at,
-            COUNT(e.id) AS entry_count,
-            COUNT(p.enriched_at) AS enriched_count
-       FROM lists l
-       LEFT JOIN list_entries e ON e.list_id = l.id
-       LEFT JOIN places p       ON p.id = e.place_ref
-      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at
-      ORDER BY l.created_at DESC`,
-  );
+const LIST_SELECT = `
+  SELECT l.id, l.name, l.source, l.source_url, l.created_at,
+         COUNT(e.id) AS entry_count,
+         COUNT(p.enriched_at) AS enriched_count
+    FROM lists l
+    LEFT JOIN list_entries e ON e.list_id = l.id
+    LEFT JOIN places p       ON p.id = e.place_ref
+`;
 
-  return rows.map((r) => ({
+function toList(r: Row): PlaceList {
+  return {
     id: String(r.id),
     name: String(r.name),
     source: String(r.source) as PlaceList["source"],
@@ -199,11 +212,42 @@ export async function getLists(): Promise<PlaceList[]> {
     createdAt: iso(r.created_at) ?? "",
     entryCount: Number(r.entry_count ?? 0),
     enrichedCount: Number(r.enriched_count ?? 0),
-  }));
+  };
 }
 
 export async function getList(id: string): Promise<PlaceList | null> {
-  return (await getLists()).find((l) => l.id === id) ?? null;
+  const rows = await query(
+    `${LIST_SELECT} WHERE l.id = $1
+      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at`,
+    [id],
+  );
+  return rows[0] ? toList(rows[0]) : null;
+}
+
+/** Bulk lookup for the "recent lists" strip, which is driven by client storage. */
+export async function getListsByIds(ids: string[]): Promise<PlaceList[]> {
+  if (ids.length === 0) return [];
+  // Explicit placeholders rather than `= ANY($1)`: array parameters depend on
+  // the driver inferring the column type, which is fragile across engines.
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+  const rows = await query(
+    `${LIST_SELECT} WHERE l.id IN (${placeholders})
+      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at
+      ORDER BY l.created_at DESC`,
+    ids,
+  );
+  return rows.map(toList);
+}
+
+/** Existing list for this share URL, so re-pasting a link doesn't duplicate it. */
+export async function findListBySourceUrl(sourceUrl: string): Promise<PlaceList | null> {
+  const rows = await query(
+    `${LIST_SELECT} WHERE l.source_url = $1
+      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at
+      ORDER BY l.created_at DESC LIMIT 1`,
+    [sourceUrl],
+  );
+  return rows[0] ? toList(rows[0]) : null;
 }
 
 export async function deleteList(id: string): Promise<void> {
@@ -245,6 +289,21 @@ export async function upsertPlaceStub(input: {
     input.name,
   ]);
   return id;
+}
+
+/** Seeds what the share link already told us, so the table is useful pre-enrichment. */
+export async function seedPlaceFromList(
+  placeRef: string,
+  data: { address: string | null; lat: number | null; lng: number | null },
+): Promise<void> {
+  await query(
+    `UPDATE places
+        SET formatted_address = COALESCE(formatted_address, $1),
+            lat = COALESCE(lat, $2),
+            lng = COALESCE(lng, $3)
+      WHERE id = $4`,
+    [data.address, data.lat, data.lng, placeRef],
+  );
 }
 
 export async function updatePlaceFromGoogle(
@@ -304,9 +363,19 @@ export async function markPlaceEnrichFailed(
 /** Places in a list that have never been successfully enriched. */
 export async function getUnenrichedPlaces(
   listId: string,
-): Promise<Array<{ placeRef: string; placeId: string | null; title: string }>> {
+): Promise<
+  Array<{
+    placeRef: string;
+    placeId: string | null;
+    title: string;
+    address: string | null;
+    lat: number | null;
+    lng: number | null;
+  }>
+> {
   const rows = await query(
-    `SELECT p.id AS place_ref, p.place_id, e.source_title
+    `SELECT p.id AS place_ref, p.place_id, e.source_title,
+            p.formatted_address, p.lat, p.lng
        FROM list_entries e
        JOIN places p ON p.id = e.place_ref
       WHERE e.list_id = $1 AND p.enriched_at IS NULL
@@ -317,6 +386,9 @@ export async function getUnenrichedPlaces(
     placeRef: String(r.place_ref),
     placeId: str(r.place_id),
     title: String(r.source_title),
+    address: str(r.formatted_address),
+    lat: num(r.lat),
+    lng: num(r.lng),
   }));
 }
 

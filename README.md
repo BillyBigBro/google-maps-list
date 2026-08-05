@@ -1,26 +1,55 @@
 # Maps List Dashboard
 
-An interactive dashboard for browsing and organizing Google Maps saved lists.
-Import a list, enrich it with Google Places data, then sort, filter, tag and
-export it as a table.
+Paste a shared Google Maps list, get a sortable table of every place in it —
+with hours, phone numbers, ratings, categories and websites filled in from the
+Places API. Tag places, mark them visited, export to CSV.
 
-## Why it works this way
+## How it reads a list
 
-**Google has no public API for user-created Lists.** The Places API can tell you
-everything about *a* place, but nothing can read "my saved list" through an
-official endpoint. So ingestion happens in two steps:
+**Google has no public API for user-created Lists.** But the Maps web client
+loads list contents from an internal JSON endpoint, and that endpoint works over
+plain HTTP — no browser, no cookies, no authentication:
 
-1. **Get the places out of the list** — via a Google Takeout CSV export.
-2. **Enrich each place** — via the Places API, which supplies hours, phone,
-   website, rating, category and coordinates.
+```
+GET /maps/preview/entitylist/getlist?...&pb=!1m6!1s<LIST_ID>!2e3!3m1!1e1!…
+```
 
-Pasting a `maps.app.goo.gl` share link directly is the next feature (see
-[Roadmap](#roadmap)); it needs a headless browser and is inherently more
-fragile, which is why the reliable path exists first.
+So the flow is:
 
-Note also that there is **no write API for Google Maps lists** — this app can't
-push changes back to Google. Your tags, statuses and notes live here, and you
-export them as CSV.
+1. Follow the `maps.app.goo.gl` redirect to get the list id.
+2. Call that endpoint and parse the (deeply nested, positional) response, which
+   yields each place's **name, address, coordinates, note and feature id**.
+3. Optionally enrich each place through the **Places API (New)** for hours,
+   phone, website, rating, price and category.
+
+Step 3 is the only part that costs anything, and the only part that needs an API
+key. Steps 1–2 are free and instant.
+
+This endpoint is undocumented and can change without notice. The parser is
+defensive throughout and fails with an actionable message rather than a stack
+trace — and Takeout CSV import remains as a fallback. Worth stating plainly:
+reading Maps this way is against Google's Terms of Service, and it is your call
+whether that matters for your use.
+
+There is also **no write API for Maps lists** — this app can't push changes back
+to Google. Tags, statuses and notes live here, and you export them as CSV.
+
+## No accounts
+
+There is no sign-in. A list lives at an unguessable URL:
+
+```
+/list/4Kma99c4XL4BhyHb
+```
+
+The id is 16 characters from a 57-character alphabet (~93 bits), so it can't be
+found by guessing. Anyone with the URL can view and edit that list — like a
+"anyone with the link" share. Bookmark it, or rely on the **Your lists** strip
+on the home page, which is remembered in your browser's local storage only; the
+server never sees it.
+
+Lookalike characters (`0`/`O`, `1`/`l`/`I`) are excluded from ids so they
+survive being read aloud or retyped.
 
 ## Setup
 
@@ -28,156 +57,152 @@ Requires Node.js 20+ and a Postgres database.
 
 ```bash
 npm install
-cp .env.example .env.local     # fill in DATABASE_URL and GOOGLE_MAPS_API_KEY
+cp .env.example .env.local     # fill in DATABASE_URL, and optionally the API key
 npm run dev
 ```
 
-Open http://localhost:3000. Tables are created automatically on first query —
-there is no separate migration step.
+Open http://localhost:3000. Tables are created on first query — no migration step.
 
-If you don't want to install Postgres locally, the simplest path is to create
-the Railway Postgres service first (below) and paste its **public** connection
-URL into `.env.local`. You then develop against the same database you deploy to.
+If you don't want Postgres locally, create the Railway Postgres service first
+(below) and paste its **public** connection URL into `.env.local`.
 
 ### Getting a Places API key
 
+Optional — the app reads and organizes lists without one; you just don't get the
+Google-sourced columns.
+
 1. Create a project in the [Google Cloud Console](https://console.cloud.google.com/).
 2. Enable **Places API (New)** — not the legacy "Places API".
-3. Create an API key under *Credentials* and set it as `GOOGLE_MAPS_API_KEY`.
-4. Restrict it to the Places API. The key is only ever used server-side, so an
-   IP restriction is appropriate — never expose it to the browser.
-
-The app runs without a key; you just get the columns that came from the CSV.
+3. Create an API key under *Credentials*, set it as `GOOGLE_MAPS_API_KEY`.
+4. Restrict it to the Places API. It's only used server-side, so an IP
+   restriction is appropriate — never expose it to the browser.
 
 ### Cost
 
 Enrichment makes **one Places request per place**, once. Results are cached in
-Postgres and never re-fetched, and the `places` table is shared across lists and
-users — so the second person to save a given restaurant costs nothing.
+Postgres and never re-fetched, and the `places` table is shared across every
+list — so the second person to save a given restaurant costs nothing.
 
 Google bills Places fields in tiers (Essentials / Pro / Enterprise) and charges
 the highest tier your request touches. The default field set in
 [`src/lib/places.ts`](src/lib/places.ts) includes opening hours, phone and
-website, which pushes it past the cheapest tier. Trim `DETAIL_FIELDS` there to
-cut cost. Check current
+website, which pushes it past the cheapest tier. Trim `DETAIL_FIELDS` to cut
+cost. Check current
 [Places API pricing](https://developers.google.com/maps/documentation/places/web-service/usage-and-billing)
 before enriching a large library — the SKU structure changed in 2025.
 
 ## Deploying to Railway
 
-1. Push this repo to GitHub.
-2. In Railway: **New Project → Deploy from GitHub repo**, pick this repo.
+1. Push to GitHub.
+2. **New Project → Deploy from GitHub repo**.
 3. **New → Database → Add PostgreSQL** in the same project.
-4. On the app service, open *Variables* and add:
+4. On the app service, *Variables*:
 
    | Variable | Value |
    | --- | --- |
-   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — Railway resolves the reference |
-   | `GOOGLE_MAPS_API_KEY` | your key |
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+   | `GOOGLE_MAPS_API_KEY` | your key (optional) |
+
+   Project-level *Shared Variables* are **not** automatically given to
+   services — each must be explicitly shared with the app service, and only
+   with the app service. Postgres needs none of them.
 
 5. Generate a domain under *Settings → Networking*.
 
-Railway autodetects Next.js, so no Dockerfile is needed. [`railway.json`](railway.json)
+Railway autodetects Next.js; no Dockerfile needed. [`railway.json`](railway.json)
 points the deploy healthcheck at `/api/health`, which verifies database
-connectivity — a deploy with a bad `DATABASE_URL` fails visibly instead of
-serving errors.
+connectivity, so a bad `DATABASE_URL` fails the deploy instead of serving errors.
 
-Two things to do once deployed:
-
-- Add Railway's egress IPs to your Google API key restriction.
-- **The app has no authentication yet.** Anyone with the URL can see, edit and
-  delete every list. Don't share the domain until auth is in place.
-
-## Exporting your lists from Google
-
-1. Go to [Google Takeout → Maps](https://takeout.google.com/settings/takeout/custom/maps).
-2. Select **Saved** — this is the section containing your lists.
-3. Export, download the archive and unzip it.
-4. You'll find one CSV per list, named after the list.
-
-The CSVs contain `Title,Note,URL`. Column names are matched loosely, so older
-exports with different headers still work.
+One caveat for hosted deploys: Google is more likely to rate-limit or challenge
+requests coming from datacenter IPs than from a home connection. At a few
+imports a day this hasn't been an issue, but it's the most likely thing to break
+first.
 
 ## Using it
 
-- **Import Takeout CSV** — creates a list from a CSV.
-- **Fetch details** — enriches every place that doesn't yet have Google data.
-  Safe to re-run; it only fetches what's missing, so a partial failure costs
-  nothing to retry.
+- **Paste a link** on the home page. In Google Maps: open the list → *Share* →
+  copy link. The list must be shared for it to be readable.
+- **Fetch details** enriches every place lacking Google data. Safe to re-run; it
+  only fetches what's missing, so a partial failure costs nothing to retry.
 - **Search / category / status filters**, and click any column header to sort.
-- **Columns** — toggle visibility. Lat/Lng, Hours and Google's business status
-  are hidden by default.
-- **My status / Tags / My note** — your own annotations, saved as you edit.
-- **Export CSV** — the full enriched table including your annotations.
+- **Columns** toggles visibility. Lat/Lng, Hours and business status are hidden
+  by default.
+- **My status / Tags / My note** are your own annotations, saved as you edit.
+- **Export CSV** gives the full table including your annotations.
+- **Import a Takeout CSV** as a fallback if a link won't read.
 
 ## Architecture
 
 ```
 src/
   app/
-    page.tsx                     server component: loads lists + rows
+    page.tsx                     home: paste box, CSV fallback, recent lists
+    list/[id]/page.tsx           a list's table (server-rendered)
     api/
       health/route.ts            deploy healthcheck (app + database)
-      lists/route.ts             GET all lists · POST import CSV
+      lists/route.ts             GET by ids · POST import (link or CSV)
       lists/[id]/route.ts        GET rows · PATCH rename · DELETE
       lists/[id]/enrich/route.ts POST run enrichment
       lists/[id]/export/route.ts GET CSV download
-      entries/[id]/route.ts      PATCH user annotations · DELETE
+      entries/[id]/route.ts      PATCH annotations · DELETE
   components/
-    Dashboard.tsx                client shell: list switching, actions
+    ListView.tsx                 list page shell: actions, banners, edit overlay
     PlacesTable.tsx              TanStack Table grid
   lib/
+    gmaps-list.ts                reads a shared list from Google
+    import.ts                    share link / CSV → database
     db.ts                        Postgres schema + queries
-    types.ts                     shared types
-    takeout.ts                   Takeout CSV parsing
-    maps-url.ts                  extracts Place ID / CID / coords from Maps URLs
     places.ts                    Places API (New) client
     enrich.ts                    enrichment orchestration
+    takeout.ts                   Takeout CSV parsing
+    maps-url.ts                  extracts Place ID / CID / coords from Maps URLs
+    recent.ts                    browser-local list shortcuts
+    types.ts                     shared types
 scripts/
-  test-db.mts                    exercises every query (npm run test:db)
+  test-db.mts                    every query, against in-memory Postgres
+  test-list-fetch.mts            live read of a real shared list
+  test-import.mts                end-to-end import into in-memory Postgres
 ```
 
 Three tables: `lists`, `places`, and `list_entries` joining them. Places are
 keyed by Google Place ID and **shared across lists**, so a restaurant saved in
 three lists is only enriched once. `list_entries` carries the per-list data —
-the note from Takeout plus your own tags, status and rating.
+the note from the shared list plus your tags, status and rating.
 
-Enrichment prefers an exact Place Details lookup when the source URL contained a
-Place ID, and falls back to a text search biased by the coordinates in the URL.
-That bias matters for chains — "Blue Bottle Coffee" alone would resolve almost
-anywhere.
+Because the share link already gives us address and coordinates, those are
+seeded immediately and the table is useful before you spend anything on
+enrichment. Those same coordinates then bias the Places text search, which is
+what makes chains resolve correctly — "Blue Bottle Coffee" alone would match
+almost anywhere.
 
-Initial page data is loaded server-side; the client keeps an overlay of your
-in-flight edits merged over the server rows, which is why the table stays
-responsive without a data-fetching effect.
+Initial page data is server-rendered; the client keeps an overlay of in-flight
+edits merged over the server rows, which is why the table stays responsive
+without a data-fetching effect.
 
 ### Testing
 
 ```bash
-npm run test:db
+npm run test:db                  # offline: every query against pg-mem
+npm run test:list                # live: read a real shared list from Google
+npm run test:import              # live: full import path end to end
+npm run test:list -- <url>       # point either live test at your own list
 ```
 
-Runs every database query against an in-memory Postgres (`pg-mem`) — no live
-database needed. Worth re-running after any change to [db.ts](src/lib/db.ts).
+`test:db` is offline and fast. The other two hit Google, and are the ones that
+tell you whether their internal format has changed.
 
 ## Roadmap
 
-- **Authentication** (Google OAuth via Auth.js) and per-user scoping. Required
-  before the deployed URL can be shared — every table needs a `user_id` and
-  every query needs to filter on it.
-- **Paste a share link.** Resolve the `maps.app.goo.gl` redirect, then drive a
-  headless browser (Playwright) to scroll the list panel and read the entries.
-  [maps-url.ts](src/lib/maps-url.ts) already handles resolution and parsing;
-  what's missing is the browser worker. Caveats: against Google's Terms of
-  Service, breaks when they change their markup, and gets bot-challenged from
-  datacenter IPs — so it will be less reliable on Railway than locally.
-- Per-user enrichment quota, so one large import can't run up the bill.
 - Map view alongside the table.
+- Distance-from-a-point column.
+- Merging and diffing lists.
+- Paging for lists over 500 places (the current page size).
 
 ## Notes on dependencies
 
-- **`pg` with hand-written SQL**, no ORM. The schema is three tables; Prisma's
-  install scripts are blocked by npm 11's script policy and Prisma 7 changed its
-  generator, neither of which is worth fighting at this size.
+- **No headless browser.** An earlier version used Playwright; testing showed
+  the JSON endpoint works over plain HTTP, so Chromium and the Dockerfile it
+  would have required are unnecessary.
+- **`pg` with hand-written SQL**, no ORM. The schema is three tables.
 - **TanStack Table is pinned to v8.** v9 shipped a rewritten API (`useTable`
   rather than `useReactTable`); this code targets v8.

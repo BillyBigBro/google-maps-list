@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0",
     "lint": "eslint",
-    "test:db": "tsx scripts/test-db.mts"
+    "test:db": "tsx scripts/test-db.mts",
+    "test:list": "tsx scripts/test-list-fetch.mts",
+    "test:import": "tsx scripts/test-import.mts"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
