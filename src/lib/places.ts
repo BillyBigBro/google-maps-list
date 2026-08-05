@@ -122,6 +122,69 @@ export async function searchPlaceByText(
   return first ? mapPlace(first) : null;
 }
 
+/**
+ * Looks a place up by its exact coordinates rather than by name.
+ *
+ * Shared lists give us each place's own map pin, so a tight radius plus a name
+ * match identifies the business precisely — better than a text search, which
+ * has to guess between branches of a chain. It also bills to a different quota
+ * metric (SearchNearbyRequest) than searchText, which matters when one of them
+ * runs dry.
+ *
+ * Returns null unless a returned place's name actually matches: a single
+ * address can host a dozen businesses, so a confident match or nothing.
+ */
+export async function searchPlaceNearby(
+  name: string,
+  center: { lat: number; lng: number },
+  radiusMetres = 50,
+): Promise<EnrichedPlace | null> {
+  const res = await fetch(`${BASE}/places:searchNearby`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey(),
+      "X-Goog-FieldMask": DETAIL_FIELDS.map((f) => `places.${f}`).join(","),
+    },
+    body: JSON.stringify({
+      locationRestriction: {
+        circle: {
+          center: { latitude: center.lat, longitude: center.lng },
+          radius: radiusMetres,
+        },
+      },
+      maxResultCount: 10,
+      rankPreference: "DISTANCE",
+    }),
+  });
+
+  if (!res.ok) throw await toError(res);
+
+  const json = (await res.json()) as { places?: GooglePlace[] };
+  const match = (json.places ?? []).find((p) =>
+    namesMatch(p.displayName?.text ?? "", name),
+  );
+  return match ? mapPlace(match) : null;
+}
+
+/** Tolerant of punctuation, case, accents and "The …" — but not of guessing. */
+function namesMatch(a: string, b: string): boolean {
+  const normalise = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/^the\s+/, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  const left = normalise(a);
+  const right = normalise(b);
+  if (!left || !right) return false;
+
+  // Containment covers "Hako" vs "Hako Sushi" without matching unrelated names.
+  return left === right || left.includes(right) || right.includes(left);
+}
+
 function mapPlace(p: GooglePlace): EnrichedPlace {
   const hours: OpeningHours | null = p.regularOpeningHours
     ? {

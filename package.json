@@ -9,6 +9,7 @@
     "lint": "eslint",
     "check:db": "tsx scripts/check-db.mts",
     "check:places": "tsx scripts/check-places.mts",
+    "check:nearby": "tsx scripts/probe-nearby.mts",
     "test:db": "tsx scripts/test-db.mts",
     "test:list": "tsx scripts/test-list-fetch.mts",
     "test:import": "tsx scripts/test-import.mts"

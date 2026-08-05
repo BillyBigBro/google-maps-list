@@ -171,9 +171,41 @@ the note from the shared list plus your tags, status and rating.
 
 Because the share link already gives us address and coordinates, those are
 seeded immediately and the table is useful before you spend anything on
-enrichment. Those same coordinates then bias the Places text search, which is
-what makes chains resolve correctly — "Blue Bottle Coffee" alone would match
-almost anywhere.
+enrichment.
+
+### How a place is resolved
+
+Enrichment tries three routes, cheapest and most precise first:
+
+1. **Place Details** — when the source carried a real Place ID. Takeout CSVs
+   often do; share links never do.
+2. **Nearby Search** on the place's own map pin, matched by name. Share links
+   always carry coordinates, so this is the usual path. It beats a text search
+   because the pin identifies the exact branch of a chain, and it works even
+   when the list has no address — a single coordinate is unambiguous where
+   "Blue Bottle Coffee" is not.
+3. **Text search** on name plus address, for anything without coordinates or
+   where no nearby result's name matched.
+
+Name matching in step 2 ignores case, punctuation, accents and a leading
+"The", and accepts containment ("Hako" vs "Hako Sushi") — but nothing looser.
+One address can host a dozen businesses, so an uncertain match falls through to
+step 3 rather than guessing.
+
+### Quotas
+
+Google meters each of these separately: `PlaceDetailsRequest`,
+`SearchNearbyRequest` and `SearchTextRequest` all have their own per-day limits.
+New Cloud projects get modest defaults (100/day is common) and can't always
+raise them.
+
+Because steps 2 and 3 draw from different buckets, exhausting one doesn't stop
+the run — a quota error on Nearby Search falls through to text search. A quota
+error with no route left aborts the run and says so, rather than burning the
+remainder of the list on the same failure.
+
+Enrichment always resumes: places are only queued when they have no Google data
+yet, so retrying after a quota reset costs only what's still missing.
 
 Initial page data is server-rendered; the client keeps an overlay of in-flight
 edits merged over the server rows, which is why the table stays responsive
@@ -184,6 +216,7 @@ without a data-fetching effect.
 ```bash
 npm run check:db                 # is DATABASE_URL reachable? what's in it?
 npm run check:places             # does the API key work? (one request)
+npm run check:nearby -- <url> 8  # how well does coordinate matching do on a list?
 
 npm run test:db                  # offline: every query against pg-mem
 npm run test:list                # live: read a real shared list from Google

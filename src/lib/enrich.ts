@@ -4,7 +4,12 @@ import {
   markPlaceEnrichFailed,
   updatePlaceFromGoogle,
 } from "./db";
-import { fetchPlaceDetails, PlacesApiError, searchPlaceByText } from "./places";
+import {
+  fetchPlaceDetails,
+  PlacesApiError,
+  searchPlaceByText,
+  searchPlaceNearby,
+} from "./places";
 import { parseMapsUrl } from "./maps-url";
 
 export type EnrichResult = {
@@ -85,9 +90,16 @@ export async function enrichList(listId: string): Promise<EnrichResult> {
 }
 
 /**
- * Share-link imports arrive with an address and coordinates already, which
- * makes the text search far more precise than a bare name — "Blue Bottle
- * Coffee" alone would match almost anywhere.
+ * Three routes to the same place, cheapest and most precise first:
+ *
+ *   1. Place Details, when the source gave us a real Place ID (Takeout CSVs do).
+ *   2. Nearby Search on the place's own pin, matched by name. Share links
+ *      always carry coordinates, so this is the usual path.
+ *   3. Text search, for anything without coordinates or without a name match.
+ *
+ * Steps 2 and 3 bill to different quota metrics, so when one is exhausted the
+ * other still works — which is why a quota error here falls through instead of
+ * giving up.
  */
 async function lookup(item: Pending, sourceUrl: string | undefined) {
   if (item.placeId) return fetchPlaceDetails(item.placeId);
@@ -95,9 +107,19 @@ async function lookup(item: Pending, sourceUrl: string | undefined) {
   const parsed = sourceUrl ? parseMapsUrl(sourceUrl) : null;
   const lat = item.lat ?? parsed?.lat ?? null;
   const lng = item.lng ?? parsed?.lng ?? null;
+  const hasCoords = lat != null && lng != null;
+
+  if (hasCoords) {
+    try {
+      const nearby = await searchPlaceNearby(item.title, { lat, lng });
+      if (nearby) return nearby;
+    } catch (err) {
+      // A quota wall on this metric shouldn't end the run — text search draws
+      // from a different one. Anything else is a real error worth surfacing.
+      if (!(err instanceof PlacesApiError) || err.status !== 429) throw err;
+    }
+  }
 
   const queryText = item.address ? `${item.title}, ${item.address}` : item.title;
-  const bias = lat != null && lng != null ? { lat, lng } : undefined;
-
-  return searchPlaceByText(queryText, bias);
+  return searchPlaceByText(queryText, hasCoords ? { lat, lng } : undefined);
 }
