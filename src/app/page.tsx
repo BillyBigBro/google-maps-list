@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Button from "@/components/Button";
 import { forgetList, getRecentIds, rememberList } from "@/lib/recent";
 import type { PlaceList } from "@/lib/types";
 
@@ -93,15 +94,11 @@ export default function Home() {
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://maps.app.goo.gl/…"
             spellCheck={false}
-            className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none focus:border-[var(--accent)]"
+            className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none transition-colors duration-150 hover:border-[var(--border-strong)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
           />
-          <button
-            type="submit"
-            disabled={busy || !url.trim()}
-            className="rounded-md bg-[var(--accent)] px-6 py-3 font-medium text-white disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" size="lg" busy={busy} disabled={!url.trim()}>
             {busy ? "Reading…" : "Read list"}
-          </button>
+          </Button>
         </div>
 
         {error && (
@@ -137,7 +134,7 @@ export default function Home() {
         <button
           onClick={() => fileInput.current?.click()}
           disabled={busy}
-          className="text-sm text-[var(--accent)] hover:underline disabled:opacity-50"
+          className="cursor-pointer rounded-md px-3 py-1.5 text-sm text-[var(--accent)] transition-colors duration-150 hover:bg-[var(--surface-hover)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:pointer-events-none disabled:opacity-50"
         >
           Import a Google Takeout CSV instead
         </button>
@@ -148,9 +145,17 @@ export default function Home() {
           <h2 className="mb-2 text-sm font-medium text-[var(--muted)]">Your lists</h2>
           <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--surface)]">
             {recent.map((list) => (
-              <li key={list.id} className="flex items-center gap-3 px-4 py-3">
-                <Link href={`/list/${list.id}`} className="min-w-0 flex-1">
-                  <span className="font-medium hover:underline">{list.name}</span>
+              <li
+                key={list.id}
+                className="group flex items-center gap-3 px-4 py-3 transition-colors duration-150 first:rounded-t-lg last:rounded-b-lg hover:bg-[var(--surface-hover)]"
+              >
+                <Link
+                  href={`/list/${list.id}`}
+                  className="min-w-0 flex-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                >
+                  <span className="font-medium group-hover:text-[var(--accent)]">
+                    {list.name}
+                  </span>
                   <span className="ml-2 text-sm text-[var(--muted)]">
                     {list.entryCount} place{list.entryCount === 1 ? "" : "s"}
                   </span>
@@ -160,7 +165,7 @@ export default function Home() {
                     forgetList(list.id);
                     setRecent((cur) => (cur ?? []).filter((l) => l.id !== list.id));
                   }}
-                  className="text-xs text-[var(--muted)] hover:underline"
+                  className="cursor-pointer rounded px-2 py-1 text-xs text-[var(--muted)] opacity-0 transition-all duration-150 hover:bg-[var(--surface-active)] hover:text-[var(--foreground)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] group-hover:opacity-100"
                   title="Remove from this list of shortcuts (the list itself is kept)"
                 >
                   hide

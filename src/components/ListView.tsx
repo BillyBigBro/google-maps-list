@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PlacesTable from "@/components/PlacesTable";
+import Button, { ButtonLink } from "@/components/Button";
 import { rememberList } from "@/lib/recent";
 import type { ListRow, PlaceList } from "@/lib/types";
 
@@ -82,8 +83,11 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
     <main className="mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-5 p-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <Link href="/" className="text-sm text-[var(--muted)] hover:underline">
-            ← All lists
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 rounded text-sm text-[var(--muted)] transition-colors duration-150 hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <span aria-hidden="true">←</span> All lists
           </Link>
           <h1 className="mt-1 truncate text-2xl font-semibold">{list.name}</h1>
           <p className="text-sm text-[var(--muted)]">
@@ -93,25 +97,25 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
+          <Button
             onClick={handleEnrich}
-            disabled={busy || unenriched === 0}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            variant="primary"
+            busy={busy}
+            disabled={unenriched === 0}
+            title={
+              unenriched === 0
+                ? "Every place already has its Google details"
+                : `Look up ${unenriched} place${unenriched === 1 ? "" : "s"} via the Places API`
+            }
           >
             {busy ? "Fetching…" : unenriched === 0 ? "All details fetched" : "Fetch details"}
-          </button>
-          <button
-            onClick={handleCopyLink}
-            className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
-          >
-            {copied ? "Copied" : "Copy link"}
-          </button>
-          <a
-            href={`/api/lists/${list.id}/export`}
-            className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
-          >
+          </Button>
+          <Button onClick={handleCopyLink} title="Copy this list's URL to share it">
+            {copied ? "✓ Copied" : "Copy link"}
+          </Button>
+          <ButtonLink href={`/api/lists/${list.id}/export`} download>
             Export CSV
-          </a>
+          </ButtonLink>
         </div>
       </header>
 

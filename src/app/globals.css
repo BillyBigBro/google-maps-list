@@ -3,10 +3,17 @@
 :root {
   --background: #f8fafc;
   --surface: #ffffff;
+  --surface-hover: #f1f5f9;
+  --surface-active: #e2e8f0;
   --border: #e2e8f0;
+  --border-strong: #cbd5e1;
   --foreground: #0f172a;
   --muted: #64748b;
   --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-active: #1e40af;
+  --danger: #e11d48;
+  --danger-surface: #fff1f2;
 }
 
 @theme inline {
@@ -24,10 +31,27 @@
   :root {
     --background: #0b1120;
     --surface: #111827;
+    --surface-hover: #1a2436;
+    --surface-active: #223047;
     --border: #1f2937;
+    --border-strong: #374151;
     --foreground: #e5e7eb;
     --muted: #94a3b8;
-    --accent: #60a5fa;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-active: #93c5fd;
+    --danger: #fb7185;
+    --danger-surface: #2a1116;
+  }
+}
+
+/* Respect users who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }
 

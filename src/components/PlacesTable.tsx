@@ -194,7 +194,7 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
             onChange={(e) =>
               onUpdateEntry(ctx.row.original.id, { status: e.target.value })
             }
-            className={`bg-transparent text-sm outline-none ${STATUS_STYLES[ctx.getValue()]}`}
+            className={`cursor-pointer rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus-visible:border-[var(--accent)] ${STATUS_STYLES[ctx.getValue()]}`}
           >
             {(Object.keys(STATUS_LABELS) as PlaceStatus[]).map((s) => (
               <option key={s} value={s} className="text-[var(--foreground)]">
@@ -219,7 +219,7 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
                 onUpdateEntry(ctx.row.original.id, { tags: next });
               }
             }}
-            className="w-32 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none focus:border-[var(--border)]"
+            className="w-32 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus:bg-[var(--surface)]"
           />
         ),
       }),
@@ -237,7 +237,7 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
                 onUpdateEntry(ctx.row.original.id, { myNote: next || null });
               }
             }}
-            className="w-40 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none focus:border-[var(--border)]"
+            className="w-40 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus:bg-[var(--surface)]"
           />
         ),
       }),
@@ -278,13 +278,13 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder="Search places…"
-          className="w-56 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
+          className="w-56 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border-strong)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
         />
 
         <select
           value={(categoryColumn?.getFilterValue() as string) ?? ""}
           onChange={(e) => categoryColumn?.setFilterValue(e.target.value || undefined)}
-          className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm outline-none"
+          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
         >
           <option value="">All categories</option>
           {categories.map((c) => (
@@ -299,7 +299,7 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
           onChange={(e) =>
             table.getColumn("myStatus")?.setFilterValue(e.target.value || undefined)
           }
-          className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm outline-none"
+          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20"
         >
           <option value="">Any status</option>
           {(Object.keys(STATUS_LABELS) as PlaceStatus[]).map((s) => (
@@ -312,23 +312,36 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
         <div className="relative">
           <button
             onClick={() => setShowColumns((v) => !v)}
-            className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm"
+            aria-expanded={showColumns}
+            className={`cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+              showColumns
+                ? "border-[var(--accent)] bg-[var(--surface-active)]"
+                : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+            }`}
           >
             Columns
           </button>
           {showColumns && (
-            <div className="absolute z-20 mt-1 w-52 rounded-md border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg">
-              {table.getAllLeafColumns().map((col) => (
-                <label key={col.id} className="flex items-center gap-2 px-1 py-1 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={col.getIsVisible()}
-                    onChange={col.getToggleVisibilityHandler()}
-                  />
-                  {typeof col.columnDef.header === "string" ? col.columnDef.header : col.id}
-                </label>
-              ))}
-            </div>
+            <>
+              {/* Click-away target so the menu closes like a real popover. */}
+              <div className="fixed inset-0 z-10" onClick={() => setShowColumns(false)} />
+              <div className="absolute z-20 mt-1 w-52 rounded-md border border-[var(--border)] bg-[var(--surface)] p-2 shadow-lg">
+                {table.getAllLeafColumns().map((col) => (
+                  <label
+                    key={col.id}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={col.getIsVisible()}
+                      onChange={col.getToggleVisibilityHandler()}
+                      className="cursor-pointer accent-[var(--accent)]"
+                    />
+                    {typeof col.columnDef.header === "string" ? col.columnDef.header : col.id}
+                  </label>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -346,9 +359,11 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
                   <th
                     key={header.id}
                     onClick={header.column.getToggleSortingHandler()}
-                    className={`whitespace-nowrap px-3 py-2 text-left font-medium text-[var(--muted)] ${
-                      header.column.getCanSort() ? "cursor-pointer select-none hover:text-[var(--foreground)]" : ""
-                    }`}
+                    className={`whitespace-nowrap px-3 py-2 text-left font-medium text-[var(--muted)] transition-colors duration-150 ${
+                      header.column.getCanSort()
+                        ? "cursor-pointer select-none hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
+                        : ""
+                    } ${header.column.getIsSorted() ? "text-[var(--accent)]" : ""}`}
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
                     {{ asc: " ↑", desc: " ↓" }[header.column.getIsSorted() as string] ?? ""}
@@ -361,7 +376,7 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
             {table.getRowModel().rows.map((row) => (
               <tr
                 key={row.id}
-                className="border-b border-[var(--border)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+                className="border-b border-[var(--border)] transition-colors duration-100 last:border-0 hover:bg-[var(--surface-hover)]"
               >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="px-3 py-2 align-top">
