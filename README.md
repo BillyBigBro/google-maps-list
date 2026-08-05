@@ -182,14 +182,36 @@ without a data-fetching effect.
 ### Testing
 
 ```bash
+npm run check:db                 # is DATABASE_URL reachable? what's in it?
+npm run check:places             # does the API key work? (one request)
+
 npm run test:db                  # offline: every query against pg-mem
 npm run test:list                # live: read a real shared list from Google
 npm run test:import              # live: full import path end to end
 npm run test:list -- <url>       # point either live test at your own list
 ```
 
-`test:db` is offline and fast. The other two hit Google, and are the ones that
-tell you whether their internal format has changed.
+The `check:` scripts diagnose configuration and print an actionable hint on
+failure — reach for them first when something won't connect. `test:db` is
+offline and fast; the two live tests hit Google and are what tell you whether
+their internal list format has changed.
+
+### Connecting to Railway's Postgres from your machine
+
+`DATABASE_URL` in Railway's own variables uses `postgres.railway.internal:5432`,
+which only resolves inside Railway. For local development you need the **public**
+URL, which exists only once a TCP proxy is enabled: Postgres service →
+*Settings → Public Networking → TCP Proxy* (internal port `5432`). Railway then
+provisions a host like `acela.proxy.rlwy.net` on a random external port and adds
+`DATABASE_PUBLIC_URL` to the service's variables.
+
+If that variable shows `${{PGUSER}}`-style placeholders, you've copied the
+template rather than the resolved value — assemble it from `PGUSER`,
+`PGPASSWORD`, `RAILWAY_TCP_PROXY_DOMAIN`, `RAILWAY_TCP_PROXY_PORT` and
+`PGDATABASE`. `npm run check:db` will tell you which part is wrong.
+
+Note that this points local development at your **production** database — data
+you import locally shows up in the deployed app.
 
 ## Roadmap
 
