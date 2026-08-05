@@ -202,8 +202,8 @@ their internal list format has changed.
 which only resolves inside Railway. For local development you need the **public**
 URL, which exists only once a TCP proxy is enabled: Postgres service →
 *Settings → Public Networking → TCP Proxy* (internal port `5432`). Railway then
-provisions a host like `acela.proxy.rlwy.net` on a random external port and adds
-`DATABASE_PUBLIC_URL` to the service's variables.
+provisions a host like `<name>.proxy.rlwy.net` on a random external port and
+adds `DATABASE_PUBLIC_URL` to the service's variables.
 
 If that variable shows `${{PGUSER}}`-style placeholders, you've copied the
 template rather than the resolved value — assemble it from `PGUSER`,
