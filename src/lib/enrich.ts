@@ -68,7 +68,7 @@ export async function enrichList(listId: string): Promise<EnrichResult> {
         if (err instanceof PlacesApiError && [401, 403, 429].includes(err.status)) {
           result.abortedReason =
             err.status === 429
-              ? `Google rate-limited the request: ${message}`
+              ? `Google rate-limited the request: ${message} Quotas reset at midnight Pacific time, and the daily limit can be raised in Google Cloud Console → APIs & Services → Quotas. Already-enriched places are kept, so retrying only costs the ones still missing.`
               : `Google rejected the API key (HTTP ${err.status}): ${message}`;
           // Logged server-side too — Railway's deploy logs are where you'd
           // look when the browser only shows a summary.
