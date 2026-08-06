@@ -20,6 +20,9 @@ const DETAIL_FIELDS = [
   "types",
   "primaryTypeDisplayName",
   "regularOpeningHours",
+  // Needed to answer "open now" in the place's own timezone rather than the
+  // viewer's. Same SKU tier as regularOpeningHours, so it costs nothing extra.
+  "utcOffsetMinutes",
   "nationalPhoneNumber",
   "websiteUri",
   "googleMapsUri",
@@ -36,7 +39,15 @@ type GooglePlace = {
   priceLevel?: string;
   types?: string[];
   primaryTypeDisplayName?: { text?: string };
-  regularOpeningHours?: { openNow?: boolean; weekdayDescriptions?: string[] };
+  regularOpeningHours?: {
+    openNow?: boolean;
+    weekdayDescriptions?: string[];
+    periods?: Array<{
+      open?: { day?: number; hour?: number; minute?: number };
+      close?: { day?: number; hour?: number; minute?: number };
+    }>;
+  };
+  utcOffsetMinutes?: number;
   nationalPhoneNumber?: string;
   websiteUri?: string;
   googleMapsUri?: string;
@@ -186,14 +197,27 @@ function namesMatch(a: string, b: string): boolean {
 }
 
 function mapPlace(p: GooglePlace): EnrichedPlace {
+  // `openNow` from the response is intentionally discarded — it describes this
+  // instant, and would be a lie as soon as it was written to the database.
   const hours: OpeningHours | null = p.regularOpeningHours
     ? {
         weekdayDescriptions: p.regularOpeningHours.weekdayDescriptions ?? [],
-        openNow: p.regularOpeningHours.openNow,
+        periods: (p.regularOpeningHours.periods ?? []).flatMap((period) => {
+          if (!period.open) return [];
+          const point = (v: NonNullable<typeof period.open>) => ({
+            day: v.day ?? 0,
+            hour: v.hour ?? 0,
+            minute: v.minute ?? 0,
+          });
+          return [
+            { open: point(period.open), ...(period.close ? { close: point(period.close) } : {}) },
+          ];
+        }),
       }
     : null;
 
   return {
+    utcOffsetMinutes: p.utcOffsetMinutes ?? null,
     placeId: p.id ?? null,
     name: p.displayName?.text ?? undefined,
     formattedAddress: p.formattedAddress ?? null,

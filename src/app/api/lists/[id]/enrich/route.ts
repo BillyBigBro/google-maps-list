@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getList } from "@/lib/db";
+import { getList, resetEnrichment } from "@/lib/db";
 import { enrichList } from "@/lib/enrich";
 import { hasApiKey } from "@/lib/places";
 
@@ -9,8 +9,12 @@ export const maxDuration = 300;
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(_request: Request, { params }: Ctx) {
+export async function POST(request: Request, { params }: Ctx) {
   const { id } = await params;
+
+  // ?refresh=1 re-fetches places already enriched, for when the stored shape
+  // has changed. Costs a request per place, so it is never the default.
+  const refresh = new URL(request.url).searchParams.get("refresh") === "1";
 
   if (!(await getList(id))) {
     return NextResponse.json({ error: "List not found." }, { status: 404 });
@@ -25,6 +29,8 @@ export async function POST(_request: Request, { params }: Ctx) {
       { status: 400 },
     );
   }
+
+  if (refresh) await resetEnrichment(id);
 
   return NextResponse.json(await enrichList(id));
 }

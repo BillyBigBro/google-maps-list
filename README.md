@@ -192,6 +192,31 @@ Name matching in step 2 ignores case, punctuation, accents and a leading
 One address can host a dozen businesses, so an uncertain match falls through to
 step 3 rather than guessing.
 
+### "Open now"
+
+Google's response includes an `openNow` boolean, and it is deliberately thrown
+away: it describes the instant of the API call, so storing it produces a value
+that is wrong within hours. What gets stored instead is the structured weekly
+schedule (`periods`) plus the place's `utcOffsetMinutes`, and open/closed is
+computed in the browser at render time, re-evaluated every minute.
+
+The offset matters because "open now" is a question about the *place's* local
+time — a Tokyo restaurant is shut at 3am Tokyo time regardless of where you are
+reading from. A list spanning several timezones resolves each place against its
+own clock. Where the offset is missing (rows enriched before it was stored) the
+viewer's timezone is used instead and the cell is marked with an asterisk, so an
+approximation is never presented as fact.
+
+[`opening-hours.ts`](src/lib/opening-hours.ts) holds the logic as pure
+functions; `npm run test:hours` covers midnight-crossing periods, schedules that
+wrap from Saturday into Sunday, 24/7 places, and the boundary instants at
+opening and closing time.
+
+**Re-fetching.** Enrichment only ever fills in places it has never filled in, so
+adding a stored field leaves existing rows without it. The **Re-fetch all**
+button re-queues an entire list — one API request per place, so it asks for
+confirmation first.
+
 ### Quotas
 
 Google meters each of these separately: `PlaceDetailsRequest`,
@@ -218,6 +243,7 @@ npm run check:db                 # is DATABASE_URL reachable? what's in it?
 npm run check:places             # does the API key work? (one request)
 npm run check:nearby -- <url> 8  # how well does coordinate matching do on a list?
 
+npm run test:hours               # offline: open/closed logic, incl. timezones
 npm run test:db                  # offline: every query against pg-mem
 npm run test:list                # live: read a real shared list from Google
 npm run test:import              # live: full import path end to end

@@ -11,6 +11,7 @@
     "check:places": "tsx scripts/check-places.mts",
     "check:nearby": "tsx scripts/probe-nearby.mts",
     "test:db": "tsx scripts/test-db.mts",
+    "test:hours": "tsx scripts/test-hours.mts",
     "test:list": "tsx scripts/test-list-fetch.mts",
     "test:import": "tsx scripts/test-import.mts"
   },

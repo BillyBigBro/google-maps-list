@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createColumnHelper,
   flexRender,
@@ -14,6 +14,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
+import { hasSchedule, openStateAt } from "@/lib/opening-hours";
 import type { ListRow, PlaceStatus } from "@/lib/types";
 
 const STATUS_LABELS: Record<PlaceStatus, string> = {
@@ -48,6 +49,23 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
     hours: false,
   });
   const [showColumns, setShowColumns] = useState(false);
+
+  /**
+   * "Open now" is computed from the stored schedule rather than read from a
+   * stored flag, so it is correct for whoever is looking and whenever they
+   * look. The clock ticks so a place that closes at 21:00 flips while the tab
+   * is left open.
+   *
+   * Starts null and is set after mount: the server and the browser would
+   * otherwise disagree about the current time and trip a hydration mismatch.
+   */
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -118,19 +136,44 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
           </span>
         ),
       }),
-      column.accessor((r) => (r.place.openingHours?.openNow ? "Open" : r.place.openingHours ? "Closed" : null), {
-        id: "openNow",
-        header: "Open now",
-        cell: (ctx) => {
-          const value = ctx.getValue();
-          if (!value) return <Dash />;
-          return (
-            <span className={value === "Open" ? "text-emerald-600 dark:text-emerald-400" : "text-[var(--muted)]"}>
-              {value}
-            </span>
-          );
+      column.accessor(
+        (r) =>
+          now && hasSchedule(r.place.openingHours)
+            ? openStateAt(r.place.openingHours, r.place.utcOffsetMinutes, now)
+            : "unknown",
+        {
+          id: "openNow",
+          header: "Open now",
+          filterFn: "equalsString",
+          cell: (ctx) => {
+            const state = ctx.getValue();
+            if (state === "unknown") return <Dash />;
+
+            const place = ctx.row.original.place;
+            // Without the place's offset we fall back to the viewer's clock,
+            // which is only right for places in the viewer's timezone. Say so
+            // rather than quietly presenting a guess as fact.
+            const basis =
+              place.utcOffsetMinutes == null
+                ? "Based on your device's timezone — re-run Fetch details for this place's own local time"
+                : `Local time at the place (UTC${formatOffset(place.utcOffsetMinutes)})`;
+
+            return (
+              <span
+                title={basis}
+                className={
+                  state === "open"
+                    ? "font-medium text-emerald-600 dark:text-emerald-400"
+                    : "text-[var(--muted)]"
+                }
+              >
+                {state === "open" ? "Open" : "Closed"}
+                {place.utcOffsetMinutes == null && <span aria-hidden="true"> *</span>}
+              </span>
+            );
+          },
         },
-      }),
+      ),
       column.accessor((r) => r.place.openingHours?.weekdayDescriptions.join("\n"), {
         id: "hours",
         header: "Hours",
@@ -244,7 +287,7 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
       column.accessor((r) => r.place.lat, { id: "latitude", header: "Lat" }),
       column.accessor((r) => r.place.lng, { id: "longitude", header: "Lng" }),
     ],
-    [onUpdateEntry],
+    [onUpdateEntry, now],
   );
 
   const table = useReactTable({
@@ -408,6 +451,15 @@ function Muted({ value }: { value: string | null | undefined }) {
 
 function Dash() {
   return <span className="text-[var(--muted)]">—</span>;
+}
+
+/** 540 → "+09:00", -300 → "-05:00" */
+function formatOffset(minutes: number): string {
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return `${sign}${hh}:${mm}`;
 }
 
 function hostname(url: string): string {

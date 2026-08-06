@@ -126,7 +126,11 @@ await db.updatePlaceFromGoogle(refA, {
   phone: "(212) 254-2246",
   website: "https://katzsdelicatessen.com",
   googleMapsUri: "https://maps.google.com/?cid=123",
-  openingHours: { weekdayDescriptions: ["Monday: 8 AM–10:45 PM"], openNow: true },
+  openingHours: {
+    weekdayDescriptions: ["Monday: 8 AM–10:45 PM"],
+    periods: [{ open: { day: 1, hour: 8, minute: 0 }, close: { day: 1, hour: 22, minute: 45 } }],
+  },
+  utcOffsetMinutes: -240,
   businessStatus: "OPERATIONAL",
 });
 
@@ -135,6 +139,12 @@ const enriched = rows.find((r) => r.place.id === refA);
 check("rating stored as a number", enriched?.place.rating === 4.5, enriched?.place.rating);
 check("types round-trip as jsonb array", JSON.stringify(enriched?.place.types) === '["restaurant","food"]');
 check("openingHours round-trips as an object", enriched?.place.openingHours?.weekdayDescriptions?.[0] === "Monday: 8 AM–10:45 PM");
+check(
+  "opening periods survive the round trip",
+  enriched?.place.openingHours?.periods?.[0]?.close?.minute === 45,
+  enriched?.place.openingHours?.periods,
+);
+check("utc offset round-trips", enriched?.place.utcOffsetMinutes === -240, enriched?.place.utcOffsetMinutes);
 check("enrichedAt is set", typeof enriched?.place.enrichedAt === "string");
 check("lat/lng are numbers", enriched?.place.lat === 40.7223 && enriched?.place.lng === -73.9874);
 

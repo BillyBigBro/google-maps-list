@@ -33,10 +33,14 @@ CREATE TABLE IF NOT EXISTS places (
   website            TEXT,
   google_maps_uri    TEXT,
   opening_hours      JSONB,
+  utc_offset_minutes INTEGER,
   business_status    TEXT,
   enriched_at        TIMESTAMPTZ,
   enrich_error       TEXT
 );
+
+-- Added when "open now" moved from a stored boolean to a live calculation.
+ALTER TABLE places ADD COLUMN IF NOT EXISTS utc_offset_minutes INTEGER;
 
 CREATE TABLE IF NOT EXISTS list_entries (
   id           TEXT PRIMARY KEY,
@@ -158,6 +162,7 @@ function toPlace(r: Row): Place {
     website: str(r.website),
     googleMapsUri: str(r.google_maps_uri),
     openingHours: parseJson<Place["openingHours"]>(r.opening_hours, null),
+    utcOffsetMinutes: num(r.utc_offset_minutes),
     businessStatus: str(r.business_status),
     enrichedAt: iso(r.enriched_at),
     enrichError: str(r.enrich_error),
@@ -326,9 +331,10 @@ export async function updatePlaceFromGoogle(
        google_maps_uri   = $13,
        opening_hours     = $14::jsonb,
        business_status   = $15,
+       utc_offset_minutes = $16,
        enriched_at       = NOW(),
        enrich_error      = NULL
-     WHERE id = $16`,
+     WHERE id = $17`,
     [
       data.placeId ?? null,
       data.name ?? null,
@@ -345,6 +351,7 @@ export async function updatePlaceFromGoogle(
       data.googleMapsUri ?? null,
       data.openingHours ? JSON.stringify(data.openingHours) : null,
       data.businessStatus ?? null,
+      data.utcOffsetMinutes ?? null,
       placeRef,
     ],
   );
@@ -390,6 +397,23 @@ export async function getUnenrichedPlaces(
     lat: num(r.lat),
     lng: num(r.lng),
   }));
+}
+
+/**
+ * Queues a list's places to be fetched again.
+ *
+ * Needed when the shape of what we store changes — places enriched before a
+ * new field existed are otherwise stuck without it, since enrichment only ever
+ * looks at rows it has never filled in.
+ */
+export async function resetEnrichment(listId: string): Promise<number> {
+  const rows = await query(
+    `UPDATE places SET enriched_at = NULL, enrich_error = NULL
+      WHERE id IN (SELECT place_ref FROM list_entries WHERE list_id = $1)
+      RETURNING id`,
+    [listId],
+  );
+  return rows.length;
 }
 
 /** Source URLs live on the entry, not the place; enrichment needs them for bias. */

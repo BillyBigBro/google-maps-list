@@ -42,11 +42,22 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
     });
   }, []);
 
-  async function handleEnrich() {
+  async function handleEnrich(refresh = false) {
+    if (
+      refresh &&
+      !confirm(
+        `Re-fetch all ${list.entryCount} places from Google? This costs one API request each — only needed if details look stale or incomplete.`,
+      )
+    ) {
+      return;
+    }
+
     setBusy(true);
     setBanner({ kind: "info", text: "Fetching place details from Google…" });
     try {
-      const res = await fetch(`/api/lists/${list.id}/enrich`, { method: "POST" });
+      const res = await fetch(`/api/lists/${list.id}/enrich${refresh ? "?refresh=1" : ""}`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Enrichment failed.");
 
@@ -113,7 +124,7 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            onClick={handleEnrich}
+            onClick={() => handleEnrich(false)}
             variant="primary"
             busy={busy}
             disabled={unenriched === 0}
@@ -128,6 +139,17 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
           <Button onClick={handleCopyLink} title="Copy this list's URL to share it">
             {copied ? "✓ Copied" : "Copy link"}
           </Button>
+          {list.enrichedCount > 0 && (
+            <Button
+              onClick={() => handleEnrich(true)}
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              title="Fetch every place again, including ones already done"
+            >
+              Re-fetch all
+            </Button>
+          )}
           <ButtonLink href={`/api/lists/${list.id}/export`} download>
             Export CSV
           </ButtonLink>
