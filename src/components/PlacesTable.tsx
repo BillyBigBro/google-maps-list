@@ -237,10 +237,10 @@ export default function PlacesTable({ rows, onUpdateEntry }: Props) {
             onChange={(e) =>
               onUpdateEntry(ctx.row.original.id, { status: e.target.value })
             }
-            className={`cursor-pointer rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus-visible:border-[var(--accent)] ${STATUS_STYLES[ctx.getValue()]}`}
+            className={`cursor-pointer appearance-none rounded border border-transparent bg-[var(--surface)] px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus-visible:border-[var(--accent)] ${STATUS_STYLES[ctx.getValue()]}`}
           >
             {(Object.keys(STATUS_LABELS) as PlaceStatus[]).map((s) => (
-              <option key={s} value={s} className="text-[var(--foreground)]">
+              <option key={s} value={s}>
                 {STATUS_LABELS[s]}
               </option>
             ))}
