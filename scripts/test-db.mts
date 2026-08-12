@@ -164,15 +164,49 @@ const urls = await db.getEntryUrlsByPlaceRef(listId);
 check("only entries with a url are returned", urls.size === 1, [...urls]);
 check("url maps to the right place", urls.get(refA) === "https://maps.google.com/?cid=123");
 
-console.log("\nlookup by share url and by id");
-const found = await db.findListBySourceUrl("https://maps.app.goo.gl/EXAMPLE");
-check("re-pasting the same link finds the existing list", found?.id === listId, found);
-check("an unknown share url returns null", (await db.findListBySourceUrl("https://x")) === null);
-
+console.log("\nlookup by id");
 const second = await db.createList({ name: "Second", source: "takeout" });
 const many = await db.getListsByIds([listId, second, "missing-id"]);
 check("getListsByIds returns only the ids that exist", many.length === 2, many.map((l) => l.id));
 check("getListsByIds with no ids returns empty", (await db.getListsByIds([])).length === 0);
+
+console.log("\nmerging placeholders that turn out to be the same place");
+// Two lists imported from share links: neither knows any Place IDs, so each
+// gets its own placeholder row for the same restaurant.
+const listA = await db.createList({ name: "A", source: "sharelink" });
+const listB = await db.createList({ name: "B", source: "sharelink" });
+const stubA = await db.upsertPlaceStub({ placeId: null, name: "Joe's Pizza" });
+const stubB = await db.upsertPlaceStub({ placeId: null, name: "Joe's Pizza" });
+check("share-link imports create separate placeholder rows", stubA !== stubB);
+
+const entryA = await db.addEntry({ listId: listA, placeRef: stubA, sourceTitle: "Joe's Pizza", position: 0 });
+const entryB = await db.addEntry({ listId: listB, placeRef: stubB, sourceTitle: "Joe's Pizza", position: 0 });
+
+const first = await db.updatePlaceFromGoogle(stubA, { placeId: "ChIJ_joes", name: "Joe's Pizza", rating: 4.6 });
+check("first enrichment keeps its own row", first === stubA, { first, stubA });
+
+// The second one discovers the same Place ID — previously a unique violation.
+const merged = await db.updatePlaceFromGoogle(stubB, { placeId: "ChIJ_joes", name: "Joe's Pizza", rating: 4.6 });
+check("second enrichment merges into the first row", merged === stubA, { merged, stubA });
+
+const rowsA = await db.getListRows(listA);
+const rowsB = await db.getListRows(listB);
+check("list A still has its entry", rowsA.length === 1, rowsA.length);
+check("list B still has its entry", rowsB.length === 1, rowsB.length);
+check("both lists now point at the same place row", rowsA[0]?.place.id === rowsB[0]?.place.id);
+check("both entries survived the merge", Boolean(entryA) && Boolean(entryB) && rowsB[0]?.id === entryB);
+check("merged row carries the enriched data", rowsB[0]?.place.rating === 4.6, rowsB[0]?.place);
+check("the redundant placeholder is gone", (await db.getUnenrichedPlaces(listB)).length === 0);
+
+console.log("\ndeduping lists by google list id");
+const g1 = await db.createList({
+  name: "Want to go",
+  source: "sharelink",
+  sourceUrl: "https://maps.app.goo.gl/SHORT",
+  googleListId: "GOOGLE_LIST_1",
+});
+check("finds an existing list by google id", (await db.findListByGoogleId("GOOGLE_LIST_1"))?.id === g1);
+check("a different google id is not matched", (await db.findListByGoogleId("GOOGLE_LIST_2")) === null);
 
 console.log("\ndeletes");
 await db.deleteEntry(entryId);

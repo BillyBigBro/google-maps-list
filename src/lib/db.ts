@@ -10,12 +10,18 @@ const CONNECTION_STRING = process.env.DATABASE_URL;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS lists (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  source      TEXT NOT NULL,
-  source_url  TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  source         TEXT NOT NULL,
+  source_url     TEXT,
+  google_list_id TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Dedupe key for share links. The same list has many URL spellings (short
+-- link, resolved link, extra query params), so the URL itself is unreliable.
+ALTER TABLE lists ADD COLUMN IF NOT EXISTS google_list_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_lists_google_id ON lists(google_list_id);
 
 CREATE TABLE IF NOT EXISTS places (
   id                 TEXT PRIMARY KEY,
@@ -190,11 +196,13 @@ export async function createList(input: {
   name: string;
   source: PlaceList["source"];
   sourceUrl?: string | null;
+  googleListId?: string | null;
 }): Promise<string> {
   const id = newListId();
   await query(
-    `INSERT INTO lists (id, name, source, source_url) VALUES ($1, $2, $3, $4)`,
-    [id, input.name, input.source, input.sourceUrl ?? null],
+    `INSERT INTO lists (id, name, source, source_url, google_list_id)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, input.name, input.source, input.sourceUrl ?? null, input.googleListId ?? null],
   );
   return id;
 }
@@ -244,13 +252,19 @@ export async function getListsByIds(ids: string[]): Promise<PlaceList[]> {
   return rows.map(toList);
 }
 
-/** Existing list for this share URL, so re-pasting a link doesn't duplicate it. */
-export async function findListBySourceUrl(sourceUrl: string): Promise<PlaceList | null> {
+/**
+ * Existing list for this Google list, so re-pasting doesn't duplicate it.
+ *
+ * Keyed on Google's own list id rather than the URL: the same list can be
+ * pasted as a short link, as the resolved link, or with tracking parameters
+ * attached, and all of those are the same list.
+ */
+export async function findListByGoogleId(googleListId: string): Promise<PlaceList | null> {
   const rows = await query(
-    `${LIST_SELECT} WHERE l.source_url = $1
+    `${LIST_SELECT} WHERE l.google_list_id = $1
       GROUP BY l.id, l.name, l.source, l.source_url, l.created_at
-      ORDER BY l.created_at DESC LIMIT 1`,
-    [sourceUrl],
+      ORDER BY l.created_at LIMIT 1`,
+    [googleListId],
   );
   return rows[0] ? toList(rows[0]) : null;
 }
@@ -311,50 +325,98 @@ export async function seedPlaceFromList(
   );
 }
 
+/**
+ * Writes Google's data onto a place, merging into an existing row when the
+ * Place ID turns out to already be taken.
+ *
+ * Share links carry no Place IDs, so every import creates its own placeholder
+ * row. Enrichment is the first moment we learn that two placeholders are the
+ * same real place — at which point the entries pointing at the newly-redundant
+ * row are moved onto the canonical one and the placeholder is dropped.
+ *
+ * Returns the row that now holds the data, which may not be the one passed in.
+ */
 export async function updatePlaceFromGoogle(
   placeRef: string,
   data: Partial<Place> & { placeId?: string | null },
-): Promise<void> {
-  await query(
-    `UPDATE places SET
-       place_id          = COALESCE($1, place_id),
-       name              = COALESCE($2, name),
-       formatted_address = $3,
-       lat = $4, lng = $5,
-       primary_type      = $6,
-       types             = $7::jsonb,
-       rating            = $8,
-       user_rating_count = $9,
-       price_level       = $10,
-       phone             = $11,
-       website           = $12,
-       google_maps_uri   = $13,
-       opening_hours     = $14::jsonb,
-       business_status   = $15,
-       utc_offset_minutes = $16,
-       enriched_at       = NOW(),
-       enrich_error      = NULL
-     WHERE id = $17`,
-    [
-      data.placeId ?? null,
-      data.name ?? null,
-      data.formattedAddress ?? null,
-      data.lat ?? null,
-      data.lng ?? null,
-      data.primaryType ?? null,
-      JSON.stringify(data.types ?? []),
-      data.rating ?? null,
-      data.userRatingCount ?? null,
-      data.priceLevel ?? null,
-      data.phone ?? null,
-      data.website ?? null,
-      data.googleMapsUri ?? null,
-      data.openingHours ? JSON.stringify(data.openingHours) : null,
-      data.businessStatus ?? null,
-      data.utcOffsetMinutes ?? null,
-      placeRef,
-    ],
-  );
+): Promise<string> {
+  await ready();
+  const client = await pool().connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let target = placeRef;
+    if (data.placeId) {
+      const existing = await client.query<{ id: string }>(
+        `SELECT id FROM places WHERE place_id = $1 AND id <> $2 LIMIT 1`,
+        [data.placeId, placeRef],
+      );
+      if (existing.rows.length > 0) {
+        target = String(existing.rows[0].id);
+        await client.query(`UPDATE list_entries SET place_ref = $1 WHERE place_ref = $2`, [
+          target,
+          placeRef,
+        ]);
+        await client.query(`DELETE FROM places WHERE id = $1`, [placeRef]);
+      }
+    }
+
+    await client.query(applyGoogleDataSql, googleDataParams(data, target));
+    await client.query("COMMIT");
+    return target;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const applyGoogleDataSql = `
+  UPDATE places SET
+    place_id          = COALESCE($1, place_id),
+    name              = COALESCE($2, name),
+    formatted_address = $3,
+    lat = $4, lng = $5,
+    primary_type      = $6,
+    types             = $7::jsonb,
+    rating            = $8,
+    user_rating_count = $9,
+    price_level       = $10,
+    phone             = $11,
+    website           = $12,
+    google_maps_uri   = $13,
+    opening_hours     = $14::jsonb,
+    business_status   = $15,
+    utc_offset_minutes = $16,
+    enriched_at       = NOW(),
+    enrich_error      = NULL
+  WHERE id = $17`;
+
+function googleDataParams(
+  data: Partial<Place> & { placeId?: string | null },
+  placeRef: string,
+): unknown[] {
+  return [
+    data.placeId ?? null,
+    data.name ?? null,
+    data.formattedAddress ?? null,
+    data.lat ?? null,
+    data.lng ?? null,
+    data.primaryType ?? null,
+    JSON.stringify(data.types ?? []),
+    data.rating ?? null,
+    data.userRatingCount ?? null,
+    data.priceLevel ?? null,
+    data.phone ?? null,
+    data.website ?? null,
+    data.googleMapsUri ?? null,
+    data.openingHours ? JSON.stringify(data.openingHours) : null,
+    data.businessStatus ?? null,
+    data.utcOffsetMinutes ?? null,
+    placeRef,
+  ];
 }
 
 export async function markPlaceEnrichFailed(

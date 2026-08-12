@@ -10,6 +10,8 @@
     "check:db": "tsx scripts/check-db.mts",
     "check:places": "tsx scripts/check-places.mts",
     "check:nearby": "tsx scripts/probe-nearby.mts",
+    "check:dupes": "tsx scripts/check-dupes.mts",
+    "dedupe:lists": "tsx scripts/dedupe-lists.mts",
     "test:db": "tsx scripts/test-db.mts",
     "test:hours": "tsx scripts/test-hours.mts",
     "test:list": "tsx scripts/test-list-fetch.mts",

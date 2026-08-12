@@ -1,11 +1,17 @@
 import {
   addEntry,
   createList,
-  findListBySourceUrl,
+  findListByGoogleId,
   seedPlaceFromList,
   upsertPlaceStub,
 } from "./db";
-import { fetchSharedList } from "./gmaps-list";
+import {
+  extractListId,
+  fetchSharedList,
+  ListFetchError,
+  looksLikeMapsLink,
+  resolveListUrl,
+} from "./gmaps-list";
 import { listNameFromFilename, parseTakeoutCsv } from "./takeout";
 
 export type ImportResult = {
@@ -24,7 +30,24 @@ export type ImportResult = {
  * twice rather than wanting two copies.
  */
 export async function importFromShareLink(url: string): Promise<ImportResult> {
-  const existing = await findListBySourceUrl(url);
+  if (!looksLikeMapsLink(url)) {
+    throw new ListFetchError(
+      "That doesn't look like a Google Maps link.",
+      "Paste a link like https://maps.app.goo.gl/… from Maps' Share button.",
+    );
+  }
+
+  // Resolve first: the same list has many URL spellings, and only Google's own
+  // list id identifies it reliably. This costs one redirect, not an API call.
+  const googleListId = extractListId(await resolveListUrl(url));
+  if (!googleListId) {
+    throw new ListFetchError(
+      "That link doesn't point to a Maps list.",
+      "Open the list in Google Maps, tap Share, and copy that link.",
+    );
+  }
+
+  const existing = await findListByGoogleId(googleListId);
   if (existing) {
     return { listId: existing.id, imported: existing.entryCount, skipped: 0, reused: true };
   }
@@ -35,6 +58,7 @@ export async function importFromShareLink(url: string): Promise<ImportResult> {
     name: scraped.name ?? "Shared list",
     source: "sharelink",
     sourceUrl: url,
+    googleListId,
   });
 
   // Sequential on purpose: upsertPlaceStub dedupes by place_id, and running it
