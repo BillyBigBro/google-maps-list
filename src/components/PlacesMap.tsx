@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import {
   AdvancedMarker,
+  AdvancedMarkerAnchorPoint,
   APIProvider,
   ColorScheme,
   InfoWindow,
@@ -69,6 +70,9 @@ export default function PlacesMap({ apiKey, mapId, icon, rows, now, selectedId, 
                 position={row.latLng}
                 title={row.place.name}
                 zIndex={isSelected ? 1000 : undefined}
+                // Saved-place icons in Google Maps sit centred on the place;
+                // only the teardrop pin points down at it.
+                anchorPoint={icon ? AdvancedMarkerAnchorPoint.CENTER : AdvancedMarkerAnchorPoint.BOTTOM}
                 onClick={() => onSelect(row.id)}
               >
                 {icon ? (
@@ -78,7 +82,7 @@ export default function PlacesMap({ apiKey, mapId, icon, rows, now, selectedId, 
                     background={PIN.background}
                     borderColor={PIN.border}
                     glyphColor="#ffffff"
-                    scale={isSelected ? 1 : 0.75}
+                    scale={isSelected ? 0.85 : 0.6}
                   />
                 )}
               </AdvancedMarker>
@@ -88,7 +92,9 @@ export default function PlacesMap({ apiKey, mapId, icon, rows, now, selectedId, 
           {selected && (
             <InfoWindow
               position={selected.latLng}
-              pixelOffset={[0, -40]}
+              // Clear the selected marker: half a centred 30px icon, or the
+              // full height of a selected pin.
+              pixelOffset={[0, icon ? -18 : -36]}
               headerContent={<strong className="text-sm text-slate-900">{selected.place.name}</strong>}
               onCloseClick={() => onSelect(null)}
               shouldFocus={false}
@@ -208,7 +214,8 @@ function PlaceCard({ row, state }: { row: Located; state: OpenState }) {
 
 /**
  * How Google Maps draws places saved to a list: the list's emoji in a small
- * white disc. Selection enlarges it and adds a ring, rather than changing the
+ * disc, sized to match — Google's are 20px plus a white outline, measured from
+ * a screenshot of Google Maps itself. Selection enlarges it and adds a ring, rather than changing the
  * icon, so you can still tell which list a pin came from.
  */
 function IconMarker({ icon, selected }: { icon: string; selected: boolean }) {
@@ -216,8 +223,8 @@ function IconMarker({ icon, selected }: { icon: string; selected: boolean }) {
     <div
       className={`flex items-center justify-center rounded-full border bg-white shadow-md transition-transform duration-150 ${
         selected
-          ? "h-9 w-9 border-blue-600 text-xl ring-2 ring-blue-600/40"
-          : "h-7 w-7 border-slate-300 text-[15px] hover:scale-110"
+          ? "h-[30px] w-[30px] border-blue-600 text-base ring-2 ring-blue-600/40"
+          : "h-[22px] w-[22px] border-white text-[12px] hover:scale-125"
       }`}
     >
       <span aria-hidden="true" className="leading-none">
