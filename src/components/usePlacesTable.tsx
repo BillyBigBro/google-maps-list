@@ -10,6 +10,7 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnFiltersState,
+  type FilterFn,
   type SortingState,
   type Table,
   type VisibilityState,
@@ -18,6 +19,15 @@ import { hasSchedule, openStateAt } from "@/lib/opening-hours";
 import type { ListRow } from "@/lib/types";
 
 const column = createColumnHelper<ListRow>();
+
+/**
+ * Category filter: the value is the list of ticked categories, and a place
+ * matches if its category is any of them.
+ */
+const inSelectedCategories: FilterFn<ListRow> = (row, id, selected: string[]) =>
+  selected.includes(row.getValue<string | null>(id) ?? "");
+// Unticking the last box removes the filter, rather than matching nothing.
+inSelectedCategories.autoRemove = (value) => !Array.isArray(value) || value.length === 0;
 
 /**
  * The table instance lives here rather than inside <PlacesTable> so the page
@@ -74,7 +84,7 @@ export function usePlacesTable(
       column.accessor((r) => r.place.primaryType, {
         id: "category",
         header: "Category",
-        filterFn: "equalsString",
+        filterFn: inSelectedCategories,
       }),
       column.accessor((r) => r.place.rating, {
         id: "rating",

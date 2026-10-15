@@ -16,17 +16,16 @@ type Props = {
 const INPUT_CLASS =
   "rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus:bg-[var(--surface)]";
 
-const CONTROL_CLASS =
-  "cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] focus:border-[var(--accent)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]/20";
-
 export default function PlacesTable({ table, totalCount, selectedId, onSelect }: Props) {
   const [showColumns, setShowColumns] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
 
   const categoryColumn = table.getColumn("category");
   const openColumn = table.getColumn("openNow");
   const openOnly = openColumn?.getFilterValue() === "open";
 
   const categoryCounts = categoryColumn?.getFacetedUniqueValues();
+  const selectedCategories = (categoryColumn?.getFilterValue() as string[] | undefined) ?? [];
   // Not memoised: the table object mutates in place, so a memo keyed on it
   // would go stale. A few dozen categories is nothing to recompute.
   const categories = [...(categoryCounts?.keys() ?? [])]
@@ -73,18 +72,75 @@ export default function PlacesTable({ table, totalCount, selectedId, onSelect }:
           {openOnly ? "● Open now" : "Open now"}
         </button>
 
-        <select
-          value={(categoryColumn?.getFilterValue() as string) ?? ""}
-          onChange={(e) => categoryColumn?.setFilterValue(e.target.value || undefined)}
-          className={`${CONTROL_CLASS} max-w-[12rem]`}
-        >
-          <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c} ({categoryCounts?.get(c) ?? 0})
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <button
+            onClick={() => setShowCategories((v) => !v)}
+            aria-expanded={showCategories}
+            className={`max-w-[14rem] cursor-pointer truncate rounded-md border px-3 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+              showCategories || selectedCategories.length > 0
+                ? "border-[var(--accent)] bg-[var(--surface-active)]"
+                : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+            }`}
+          >
+            {selectedCategories.length === 0
+              ? "All categories"
+              : selectedCategories.length === 1
+                ? selectedCategories[0]
+                : `${selectedCategories.length} categories`}{" "}
+            <span aria-hidden="true" className="text-[var(--muted)]">▾</span>
+          </button>
+          {showCategories && (
+            <>
+              {/* Click-away target so the menu closes like a real popover. */}
+              <div className="fixed inset-0 z-10" onClick={() => setShowCategories(false)} />
+              <div className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-[var(--border)] bg-[var(--surface)] shadow-lg">
+                <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-xs">
+                  <button
+                    onClick={() => categoryColumn?.setFilterValue(categories)}
+                    className="cursor-pointer text-[var(--accent)] hover:underline"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    onClick={() => categoryColumn?.setFilterValue(undefined)}
+                    disabled={selectedCategories.length === 0}
+                    className="cursor-pointer text-[var(--muted)] hover:text-[var(--foreground)] hover:underline disabled:cursor-default disabled:opacity-40 disabled:no-underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="thin-scroll max-h-80 overflow-y-auto p-2">
+                  {categories.length === 0 && (
+                    <p className="px-2 py-1.5 text-sm text-[var(--muted)]">
+                      No categories yet — use Fetch details.
+                    </p>
+                  )}
+                  {categories.map((c) => (
+                    <label
+                      key={c}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-[var(--surface-hover)]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCategories.includes(c)}
+                        onChange={(e) =>
+                          categoryColumn?.setFilterValue(
+                            e.target.checked
+                              ? [...selectedCategories, c]
+                              : selectedCategories.filter((x) => x !== c),
+                          )
+                        }
+                        className="cursor-pointer accent-[var(--accent)]"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{c}</span>
+                      <span className="text-xs text-[var(--muted)]">{categoryCounts?.get(c) ?? 0}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
 
         <div className="relative">
