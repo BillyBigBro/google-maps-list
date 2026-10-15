@@ -92,9 +92,9 @@ export default function PlacesMap({ apiKey, mapId, icon, rows, now, selectedId, 
           {selected && (
             <InfoWindow
               position={selected.latLng}
-              // Clear the selected marker: half a centred 30px icon, or the
+              // Clear the selected marker: half a centred 32px icon, or the
               // full height of a selected pin.
-              pixelOffset={[0, icon ? -18 : -36]}
+              pixelOffset={[0, icon ? -19 : -36]}
               headerContent={<strong className="text-sm text-slate-900">{selected.place.name}</strong>}
               onCloseClick={() => onSelect(null)}
               shouldFocus={false}
@@ -214,8 +214,8 @@ function PlaceCard({ row, state }: { row: Located; state: OpenState }) {
 
 /**
  * How Google Maps draws places saved to a list: the list's emoji in a small
- * disc, sized to match — Google's are 20px plus a white outline, measured from
- * a screenshot of Google Maps itself. Selection enlarges it and adds a ring, rather than changing the
+ * white disc that the emoji nearly fills — about 17px of emoji in a 24px disc,
+ * measured from screenshots of Google Maps itself. Selection enlarges it and adds a ring, rather than changing the
  * icon, so you can still tell which list a pin came from.
  */
 function IconMarker({ icon, selected }: { icon: string; selected: boolean }) {
@@ -223,8 +223,8 @@ function IconMarker({ icon, selected }: { icon: string; selected: boolean }) {
     <div
       className={`flex items-center justify-center rounded-full border bg-white shadow-md transition-transform duration-150 ${
         selected
-          ? "h-[30px] w-[30px] border-blue-600 text-base ring-2 ring-blue-600/40"
-          : "h-[22px] w-[22px] border-white text-[12px] hover:scale-125"
+          ? "h-[32px] w-[32px] border-blue-600 text-[23px] ring-2 ring-blue-600/40"
+          : "h-[24px] w-[24px] border-slate-200 text-[17px] hover:scale-125"
       }`}
     >
       <span aria-hidden="true" className="leading-none">
