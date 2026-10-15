@@ -158,6 +158,10 @@ export default function Home() {
                   </span>
                   <span className="ml-2 text-sm text-[var(--muted)]">
                     {list.entryCount} place{list.entryCount === 1 ? "" : "s"}
+                    {/* Re-importing a list makes a new copy with the same name;
+                        the import time is what tells them apart. */}
+                    {" · "}
+                    {formatImported(list.createdAt)}
                   </span>
                 </Link>
                 <button
@@ -180,4 +184,23 @@ export default function Home() {
       )}
     </main>
   );
+}
+
+/** "Today 2:31 PM", "Yesterday 9:05 AM", or "Oct 3, 2:31 PM" — in the viewer's timezone. */
+function formatImported(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return `Today ${time}`;
+  if (date.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
+  return `${date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  })}, ${time}`;
 }

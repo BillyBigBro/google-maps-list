@@ -6,6 +6,7 @@ export type ImportedEntry = {
   note: string | null;
   url: string | null;
   placeId: string | null;
+  cid: string | null;
 };
 
 export type ParsedTakeout = {
@@ -62,6 +63,7 @@ export function parseTakeoutCsv(csv: string): ParsedTakeout {
       note: noteKey ? clean(row[noteKey]) : null,
       url,
       placeId: parsedUrl?.placeId ?? null,
+      cid: parsedUrl?.cid ?? null,
     });
   }
 

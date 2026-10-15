@@ -32,7 +32,6 @@ const result = await importFromShareLink(url);
 console.log(`  list id: ${result.listId}  imported: ${result.imported}`);
 
 check("import reported places", result.imported > 0, result);
-check("not flagged as reused on first import", result.reused === false);
 
 const list = await db.getList(result.listId);
 check("list is readable by its id", list !== null);
@@ -63,10 +62,34 @@ check(
 );
 
 console.log("\nre-pasting the same link");
+// Pretend the first import was enriched, so we can see whether the second
+// import pays for it again.
+const firstRow = rows[0];
+await db.updatePlaceFromGoogle(firstRow.place.id, {
+  placeId: "ChIJ_test_reuse",
+  name: firstRow.place.name,
+  rating: 4.2,
+});
+
 const again = await importFromShareLink(url);
-check("returns the existing list", again.listId === result.listId, again);
-check("flagged as reused", again.reused === true);
-check("no duplicate list was created", (await db.getListsByIds([result.listId])).length === 1);
+check("creates a fresh list rather than reopening the old one", again.listId !== result.listId, again);
+check("the fresh list has every place", again.imported === result.imported, again);
+check("the old list is left untouched", (await db.getList(result.listId))?.entryCount === result.imported);
+
+const againRows = await db.getListRows(again.listId);
+check(
+  "an already-enriched place is reused, not looked up again",
+  againRows.find((r) => r.sourceTitle === firstRow.sourceTitle)?.place.rating === 4.2,
+);
+check(
+  "so the fresh list only queues places that still need details",
+  (await db.getUnenrichedPlaces(again.listId)).length === result.imported - 1,
+  (await db.getUnenrichedPlaces(again.listId)).length,
+);
+check(
+  "both lists share place rows instead of duplicating them",
+  againRows.every((r, i) => r.place.id === rows[i].place.id),
+);
 
 console.log("\ncsv import still works");
 const csv = "Title,Note,URL\nJoe's Pizza,,https://www.google.com/maps/search/?api=1&query=x&query_place_id=ChIJRYNC\n,orphan,\n";

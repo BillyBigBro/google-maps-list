@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS places (
 -- Added when "open now" moved from a stored boolean to a live calculation.
 ALTER TABLE places ADD COLUMN IF NOT EXISTS utc_offset_minutes INTEGER;
 
+-- Google's customer id for the place, which share links do carry (unlike a
+-- Place ID). It's how a fresh import of a list finds places we've already
+-- looked up, so re-importing doesn't pay to enrich them again. Not unique:
+-- older imports left several placeholder rows for one place.
+ALTER TABLE places ADD COLUMN IF NOT EXISTS cid TEXT;
+
 CREATE TABLE IF NOT EXISTS list_entries (
   id           TEXT PRIMARY KEY,
   list_id      TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
@@ -64,6 +70,7 @@ CREATE TABLE IF NOT EXISTS list_entries (
 
 CREATE INDEX IF NOT EXISTS idx_entries_list ON list_entries(list_id);
 CREATE INDEX IF NOT EXISTS idx_places_place_id ON places(place_id);
+CREATE INDEX IF NOT EXISTS idx_places_cid ON places(cid);
 `;
 
 const ID_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -116,8 +123,26 @@ function needsSsl(url: string): boolean {
 export function ready(): Promise<void> {
   globalForDb.__gmapsReady ??= pool()
     .query(SCHEMA)
-    .then(() => undefined);
+    .then(backfillCids);
   return globalForDb.__gmapsReady;
+}
+
+/**
+ * Places imported before the cid column existed still have their cid inside
+ * the entry's maps.google.com/?cid=… link. Copying it across lets those
+ * already-enriched places be reused by future imports. Only touches rows that
+ * lack one, so after the first run this is a single empty query.
+ */
+async function backfillCids(): Promise<void> {
+  const { rows } = await pool().query<{ id: string; source_url: string }>(
+    `SELECT p.id, e.source_url
+       FROM places p JOIN list_entries e ON e.place_ref = p.id
+      WHERE p.cid IS NULL AND e.source_url LIKE '%cid=%'`,
+  );
+  for (const row of rows) {
+    const cid = row.source_url.match(/[?&]cid=(\d+)/)?.[1];
+    if (cid) await pool().query(`UPDATE places SET cid = $1 WHERE id = $2`, [cid, row.id]);
+  }
 }
 
 async function query<T extends QueryResultRow = QueryResultRow>(
@@ -287,12 +312,14 @@ export async function renameList(id: string, name: string): Promise<void> {
 /* ----------------------------------------------------------------- places */
 
 /**
- * Places are shared across lists so a restaurant saved in three lists is only
- * ever enriched once. A row with a known placeId is reused; unresolved rows
- * (no placeId yet) always get their own row.
+ * Places are shared across lists so a restaurant saved in three lists — or
+ * imported three times — is only ever enriched once. An existing row is reused
+ * when it matches on Place ID or, failing that, on cid; between several
+ * matching rows the one that already has Google's details wins.
  */
 export async function upsertPlaceStub(input: {
   placeId: string | null;
+  cid?: string | null;
   name: string;
 }): Promise<string> {
   if (input.placeId) {
@@ -301,10 +328,19 @@ export async function upsertPlaceStub(input: {
     ]);
     if (existing.length > 0) return String(existing[0].id);
   }
+  if (input.cid) {
+    const existing = await query(
+      `SELECT id FROM places WHERE cid = $1
+        ORDER BY (enriched_at IS NULL), id LIMIT 1`,
+      [input.cid],
+    );
+    if (existing.length > 0) return String(existing[0].id);
+  }
   const id = randomUUID();
-  await query(`INSERT INTO places (id, place_id, name) VALUES ($1, $2, $3)`, [
+  await query(`INSERT INTO places (id, place_id, cid, name) VALUES ($1, $2, $3, $4)`, [
     id,
     input.placeId,
+    input.cid ?? null,
     input.name,
   ]);
   return id;
@@ -354,6 +390,18 @@ export async function updatePlaceFromGoogle(
       );
       if (existing.rows.length > 0) {
         target = String(existing.rows[0].id);
+        // Keep the placeholder's cid so later imports can still find this place.
+        const stub = await client.query<{ cid: string | null }>(
+          `SELECT cid FROM places WHERE id = $1`,
+          [placeRef],
+        );
+        const stubCid = stub.rows[0]?.cid ?? null;
+        if (stubCid) {
+          await client.query(`UPDATE places SET cid = COALESCE(cid, $1) WHERE id = $2`, [
+            stubCid,
+            target,
+          ]);
+        }
         await client.query(`UPDATE list_entries SET place_ref = $1 WHERE place_ref = $2`, [
           target,
           placeRef,

@@ -208,6 +208,24 @@ const g1 = await db.createList({
 check("finds an existing list by google id", (await db.findListByGoogleId("GOOGLE_LIST_1"))?.id === g1);
 check("a different google id is not matched", (await db.findListByGoogleId("GOOGLE_LIST_2")) === null);
 
+console.log("\nreusing places by cid");
+const cidStub = await db.upsertPlaceStub({ placeId: null, cid: "123456", name: "Cid Cafe" });
+const cidAgain = await db.upsertPlaceStub({ placeId: null, cid: "123456", name: "Cid Cafe" });
+check("same cid reuses the row", cidStub === cidAgain, { cidStub, cidAgain });
+const otherCid = await db.upsertPlaceStub({ placeId: null, cid: "999", name: "Cid Cafe" });
+check("a different cid gets its own row", otherCid !== cidStub);
+
+// Two placeholders for one place (left over from older imports): the enriched
+// one must win, or a re-import would re-pay for details we already have.
+const legacyA = await db.upsertPlaceStub({ placeId: null, name: "Legacy" });
+const legacyB = await db.upsertPlaceStub({ placeId: null, name: "Legacy" });
+await db.pool().query(`UPDATE places SET cid = '777' WHERE id IN ($1, $2)`, [legacyA, legacyB]);
+await db.updatePlaceFromGoogle(legacyB, { placeId: "ChIJ_legacy", name: "Legacy" });
+check(
+  "the enriched row wins among several with the same cid",
+  (await db.upsertPlaceStub({ placeId: null, cid: "777", name: "Legacy" })) === legacyB,
+);
+
 console.log("\ndeletes");
 await db.deleteEntry(entryId);
 check("entry is removed", (await db.getListRows(listId)).length === 1);

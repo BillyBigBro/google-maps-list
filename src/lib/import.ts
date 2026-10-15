@@ -1,7 +1,6 @@
 import {
   addEntry,
   createList,
-  findListByGoogleId,
   seedPlaceFromList,
   upsertPlaceStub,
 } from "./db";
@@ -18,16 +17,14 @@ export type ImportResult = {
   listId: string;
   imported: number;
   skipped: number;
-  /** True when an identical share link had already been imported. */
-  reused: boolean;
 };
 
 /**
- * Reads a shared Google Maps list and stores it.
+ * Reads a shared Google Maps list and stores it as a new list.
  *
- * Re-pasting a link you've already imported reopens that list instead of
- * creating a duplicate — the common case is someone pasting the same link
- * twice rather than wanting two copies.
+ * Re-pasting a link you've imported before deliberately makes a fresh copy
+ * rather than reopening the old one: the old copy is a snapshot, and the point
+ * of pasting again is usually to pick up places added in Maps since.
  */
 export async function importFromShareLink(url: string): Promise<ImportResult> {
   if (!looksLikeMapsLink(url)) {
@@ -47,11 +44,10 @@ export async function importFromShareLink(url: string): Promise<ImportResult> {
     );
   }
 
-  const existing = await findListByGoogleId(googleListId);
-  if (existing) {
-    return { listId: existing.id, imported: existing.entryCount, skipped: 0, reused: true };
-  }
-
+  // Every submission is a fresh read from Google, saved as a new list — even
+  // for a list imported before — so places added in Maps since then show up.
+  // What isn't repeated is the expensive part: places already looked up are
+  // matched by cid below and reused, so only genuinely new ones need enriching.
   const scraped = await fetchSharedList(url);
 
   const listId = await createList({
@@ -64,7 +60,7 @@ export async function importFromShareLink(url: string): Promise<ImportResult> {
   // Sequential on purpose: upsertPlaceStub dedupes by place_id, and running it
   // concurrently would race two inserts for the same place.
   for (const [index, place] of scraped.places.entries()) {
-    const placeRef = await upsertPlaceStub({ placeId: null, name: place.name });
+    const placeRef = await upsertPlaceStub({ placeId: null, cid: place.cid, name: place.name });
     await seedPlaceFromList(placeRef, {
       address: place.address,
       lat: place.lat,
@@ -80,7 +76,7 @@ export async function importFromShareLink(url: string): Promise<ImportResult> {
     });
   }
 
-  return { listId, imported: scraped.places.length, skipped: 0, reused: false };
+  return { listId, imported: scraped.places.length, skipped: 0 };
 }
 
 export async function importFromCsvText(
@@ -99,7 +95,11 @@ export async function importFromCsvText(
   });
 
   for (const [index, entry] of parsed.entries.entries()) {
-    const placeRef = await upsertPlaceStub({ placeId: entry.placeId, name: entry.title });
+    const placeRef = await upsertPlaceStub({
+      placeId: entry.placeId,
+      cid: entry.cid,
+      name: entry.title,
+    });
     await addEntry({
       listId,
       placeRef,
@@ -114,6 +114,5 @@ export async function importFromCsvText(
     listId,
     imported: parsed.entries.length,
     skipped: parsed.skipped,
-    reused: false,
   };
 }
