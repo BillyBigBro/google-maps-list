@@ -4,13 +4,23 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PlacesTable from "@/components/PlacesTable";
+import PlacesMap from "@/components/PlacesMap";
+import { usePlacesTable } from "@/components/usePlacesTable";
 import Button, { ButtonLink } from "@/components/Button";
 import { rememberList } from "@/lib/recent";
 import type { ListRow, PlaceList } from "@/lib/types";
 
 type Banner = { kind: "info" | "error" | "success"; text: string } | null;
 
-export default function ListView({ list, rows }: { list: PlaceList; rows: ListRow[] }) {
+type Props = {
+  list: PlaceList;
+  rows: ListRow[];
+  /** Browser key for the Maps JavaScript API; null renders a setup hint instead. */
+  mapsApiKey: string | null;
+  mapId: string;
+};
+
+export default function ListView({ list, rows, mapsApiKey, mapId }: Props) {
   const router = useRouter();
   const [banner, setBanner] = useState<Banner>(null);
   const [busy, setBusy] = useState(false);
@@ -28,6 +38,9 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
     [rows, edits],
   );
 
+  // Shared by table and map: clicking either one highlights the place in both.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   // Opening a list by URL is how it gets into this browser's shortcuts.
   useEffect(() => {
     rememberList(list.id);
@@ -41,6 +54,10 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
       body: JSON.stringify(patch),
     });
   }, []);
+
+  const { table, now } = usePlacesTable(mergedRows, handleUpdateEntry);
+  // Filtered (and sorted) exactly as the table shows them — the map's input.
+  const visibleRows = table.getRowModel().rows.map((r) => r.original);
 
   async function handleEnrich(refresh = false) {
     if (
@@ -106,8 +123,8 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
   const unenriched = list.entryCount - list.enrichedCount;
 
   return (
-    <main className="mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-5 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <main className="flex w-full flex-col gap-4 p-4 lg:h-dvh lg:p-5">
+      <header className="flex shrink-0 flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <Link
             href="/"
@@ -158,7 +175,7 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
 
       {banner && (
         <div
-          className={`rounded-md border px-4 py-3 text-sm ${
+          className={`shrink-0 rounded-md border px-4 py-3 text-sm ${
             banner.kind === "error"
               ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200"
               : banner.kind === "success"
@@ -171,14 +188,37 @@ export default function ListView({ list, rows }: { list: PlaceList; rows: ListRo
       )}
 
       {unenriched > 0 && !banner && (
-        <p className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
+        <p className="shrink-0 rounded-md border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
           Names, addresses and locations came from the shared list.{" "}
           <strong className="text-[var(--foreground)]">Fetch details</strong> adds hours,
           phone numbers, ratings, categories and websites from Google Places.
         </p>
       )}
 
-      <PlacesTable rows={mergedRows} onUpdateEntry={handleUpdateEntry} />
+      {/*
+        One third table, two thirds map on wide screens. Below lg the two stack,
+        map first, each with its own height so neither collapses.
+      */}
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-3">
+        <section className="order-2 h-[70vh] min-h-0 lg:order-1 lg:col-span-1 lg:h-auto">
+          <PlacesTable
+            table={table}
+            totalCount={mergedRows.length}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+        </section>
+        <section className="order-1 h-[55vh] min-h-0 lg:order-2 lg:col-span-2 lg:h-auto">
+          <PlacesMap
+            apiKey={mapsApiKey}
+            mapId={mapId}
+            rows={visibleRows}
+            now={now}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+        </section>
+      </div>
     </main>
   );
 }
