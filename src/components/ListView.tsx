@@ -212,6 +212,7 @@ export default function ListView({ list, rows, mapsApiKey, mapId }: Props) {
           <PlacesMap
             apiKey={mapsApiKey}
             mapId={mapId}
+            icon={list.icon}
             rows={visibleRows}
             now={now}
             selectedId={selectedId}

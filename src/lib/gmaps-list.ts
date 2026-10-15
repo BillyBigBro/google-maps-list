@@ -35,6 +35,8 @@ export type ScrapedList = {
   name: string | null;
   /** Display name of the account that owns the list, when Google includes it. */
   owner: string | null;
+  /** The list's icon as shown in Google Maps (an emoji), when it has one. */
+  icon: string | null;
   places: ScrapedPlace[];
 };
 
@@ -186,6 +188,25 @@ function decodeFeatureId(pair: unknown): { ftid: string | null; cid: string | nu
   };
 }
 
+/**
+ * Custom lists store the emoji their owner picked at [0][17]. Google's
+ * built-in lists have no emoji there and draw a fixed icon instead, so those
+ * are mapped from the list type at [0][0][1] (verified: "Want to go" is 3).
+ * The named fallbacks cover the other built-ins, whose type codes we haven't
+ * seen in a live payload yet.
+ */
+function listIcon(payload: unknown): string | null {
+  const emoji = asString(at(payload, 0, 17));
+  if (emoji) return emoji;
+
+  if (at(payload, 0, 0, 1) === 3) return "🚩";
+
+  const name = asString(at(payload, 0, 4))?.toLowerCase();
+  if (name === "favorites" || name === "favourites") return "❤️";
+  if (name === "starred places") return "⭐";
+  return null;
+}
+
 export function parseListPayload(payload: unknown, listId: string): ScrapedList {
   const entries = at(payload, 0, 8);
   if (!Array.isArray(entries)) {
@@ -222,6 +243,7 @@ export function parseListPayload(payload: unknown, listId: string): ScrapedList 
     // title and [0][3][0] is the owner's display name.
     name: asString(at(payload, 0, 4)),
     owner: asString(at(payload, 0, 3, 0)),
+    icon: listIcon(payload),
     places,
   };
 }

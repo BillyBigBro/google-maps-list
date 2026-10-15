@@ -15,21 +15,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { hasSchedule, openStateAt } from "@/lib/opening-hours";
-import type { ListRow, PlaceStatus } from "@/lib/types";
-
-export const STATUS_LABELS: Record<PlaceStatus, string> = {
-  none: "—",
-  want: "Want to go",
-  visited: "Visited",
-  skip: "Skip",
-};
-
-export const STATUS_STYLES: Record<PlaceStatus, string> = {
-  none: "text-[var(--muted)]",
-  want: "text-blue-600 dark:text-blue-400",
-  visited: "text-emerald-600 dark:text-emerald-400",
-  skip: "text-rose-600 dark:text-rose-400 line-through",
-};
+import type { ListRow } from "@/lib/types";
 
 const column = createColumnHelper<ListRow>();
 
@@ -48,7 +34,6 @@ export function usePlacesTable(
   // The table now shares the screen with a map, so it starts narrow: the
   // columns you scan by are on, the rest are a click away under "Columns".
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    reviews: false,
     price: false,
     address: false,
     hours: false,
@@ -98,7 +83,7 @@ export function usePlacesTable(
       }),
       column.accessor((r) => r.place.userRatingCount, {
         id: "reviews",
-        header: "Reviews",
+        header: "# Ratings",
         sortUndefined: "last",
       }),
       column.accessor((r) => r.place.priceLevel, { id: "price", header: "Price" }),
@@ -129,11 +114,6 @@ export function usePlacesTable(
         id: "listNote",
         header: "List note",
         enableSorting: false,
-      }),
-      column.accessor((r) => r.status, {
-        id: "myStatus",
-        header: "My status",
-        filterFn: "equalsString",
       }),
       column.accessor((r) => r.tags.join(", "), {
         id: "tags",

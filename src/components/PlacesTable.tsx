@@ -2,9 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { flexRender, type Cell, type Table } from "@tanstack/react-table";
-import { STATUS_LABELS, STATUS_STYLES, type PlacesTableMeta } from "./usePlacesTable";
+import type { PlacesTableMeta } from "./usePlacesTable";
 import { hasSchedule } from "@/lib/opening-hours";
-import type { ListRow, PlaceStatus } from "@/lib/types";
+import type { ListRow } from "@/lib/types";
 
 type Props = {
   table: Table<ListRow>;
@@ -23,7 +23,6 @@ export default function PlacesTable({ table, totalCount, selectedId, onSelect }:
   const [showColumns, setShowColumns] = useState(false);
 
   const categoryColumn = table.getColumn("category");
-  const statusColumn = table.getColumn("myStatus");
   const openColumn = table.getColumn("openNow");
   const openOnly = openColumn?.getFilterValue() === "open";
 
@@ -87,18 +86,6 @@ export default function PlacesTable({ table, totalCount, selectedId, onSelect }:
           ))}
         </select>
 
-        <select
-          value={(statusColumn?.getFilterValue() as string) ?? ""}
-          onChange={(e) => statusColumn?.setFilterValue(e.target.value || undefined)}
-          className={CONTROL_CLASS}
-        >
-          <option value="">Any status</option>
-          {(Object.keys(STATUS_LABELS) as PlaceStatus[]).map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
 
         <div className="relative">
           <button
@@ -314,23 +301,6 @@ function renderCell(cell: Cell<ListRow, unknown>, table: Table<ListRow>): ReactN
 
     case "businessStatus":
       return <Muted value={(value as string | null)?.replace(/_/g, " ").toLowerCase() ?? null} />;
-
-    case "myStatus": {
-      const status = value as PlaceStatus;
-      return (
-        <select
-          value={status}
-          onChange={(e) => onUpdateEntry(row.id, { status: e.target.value })}
-          className={`cursor-pointer appearance-none rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus-visible:border-[var(--accent)] ${STATUS_STYLES[status]}`}
-        >
-          {(Object.keys(STATUS_LABELS) as PlaceStatus[]).map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-      );
-    }
 
     case "tags":
       return (

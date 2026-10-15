@@ -67,6 +67,8 @@ export type PlaceList = {
   name: string;
   source: "takeout" | "sharelink" | "manual";
   sourceUrl: string | null;
+  /** Emoji from the list in Google Maps; null for CSV imports and icon-less lists. */
+  icon: string | null;
   createdAt: string;
   entryCount: number;
   enrichedCount: number;

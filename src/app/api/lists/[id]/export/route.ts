@@ -24,7 +24,6 @@ export async function GET(_request: Request, { params }: Ctx) {
     Latitude: row.place.lat ?? "",
     Longitude: row.place.lng ?? "",
     "List note": row.sourceNote ?? "",
-    Status: row.status,
     Tags: row.tags.join(", "),
     "My rating": row.myRating ?? "",
     "My note": row.myNote ?? "",

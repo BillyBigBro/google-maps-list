@@ -55,6 +55,7 @@ export async function importFromShareLink(url: string): Promise<ImportResult> {
     source: "sharelink",
     sourceUrl: url,
     googleListId,
+    icon: scraped.icon,
   });
 
   // Sequential on purpose: upsertPlaceStub dedupes by place_id, and running it

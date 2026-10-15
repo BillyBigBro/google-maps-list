@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS lists (
 -- Dedupe key for share links. The same list has many URL spellings (short
 -- link, resolved link, extra query params), so the URL itself is unreliable.
 ALTER TABLE lists ADD COLUMN IF NOT EXISTS google_list_id TEXT;
+
+-- The emoji the list has in Google Maps, drawn on its map pins.
+ALTER TABLE lists ADD COLUMN IF NOT EXISTS icon TEXT;
 CREATE INDEX IF NOT EXISTS idx_lists_google_id ON lists(google_list_id);
 
 CREATE TABLE IF NOT EXISTS places (
@@ -222,18 +225,26 @@ export async function createList(input: {
   source: PlaceList["source"];
   sourceUrl?: string | null;
   googleListId?: string | null;
+  icon?: string | null;
 }): Promise<string> {
   const id = newListId();
   await query(
-    `INSERT INTO lists (id, name, source, source_url, google_list_id)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [id, input.name, input.source, input.sourceUrl ?? null, input.googleListId ?? null],
+    `INSERT INTO lists (id, name, source, source_url, google_list_id, icon)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      id,
+      input.name,
+      input.source,
+      input.sourceUrl ?? null,
+      input.googleListId ?? null,
+      input.icon ?? null,
+    ],
   );
   return id;
 }
 
 const LIST_SELECT = `
-  SELECT l.id, l.name, l.source, l.source_url, l.created_at,
+  SELECT l.id, l.name, l.source, l.source_url, l.icon, l.created_at,
          COUNT(e.id) AS entry_count,
          COUNT(p.enriched_at) AS enriched_count
     FROM lists l
@@ -247,6 +258,7 @@ function toList(r: Row): PlaceList {
     name: String(r.name),
     source: String(r.source) as PlaceList["source"],
     sourceUrl: str(r.source_url),
+    icon: str(r.icon),
     createdAt: iso(r.created_at) ?? "",
     entryCount: Number(r.entry_count ?? 0),
     enrichedCount: Number(r.enriched_count ?? 0),
@@ -256,7 +268,7 @@ function toList(r: Row): PlaceList {
 export async function getList(id: string): Promise<PlaceList | null> {
   const rows = await query(
     `${LIST_SELECT} WHERE l.id = $1
-      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at`,
+      GROUP BY l.id, l.name, l.source, l.source_url, l.icon, l.created_at`,
     [id],
   );
   return rows[0] ? toList(rows[0]) : null;
@@ -270,7 +282,7 @@ export async function getListsByIds(ids: string[]): Promise<PlaceList[]> {
   const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
   const rows = await query(
     `${LIST_SELECT} WHERE l.id IN (${placeholders})
-      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at
+      GROUP BY l.id, l.name, l.source, l.source_url, l.icon, l.created_at
       ORDER BY l.created_at DESC`,
     ids,
   );
@@ -287,7 +299,7 @@ export async function getListsByIds(ids: string[]): Promise<PlaceList[]> {
 export async function findListByGoogleId(googleListId: string): Promise<PlaceList | null> {
   const rows = await query(
     `${LIST_SELECT} WHERE l.google_list_id = $1
-      GROUP BY l.id, l.name, l.source, l.source_url, l.created_at
+      GROUP BY l.id, l.name, l.source, l.source_url, l.icon, l.created_at
       ORDER BY l.created_at LIMIT 1`,
     [googleListId],
   );

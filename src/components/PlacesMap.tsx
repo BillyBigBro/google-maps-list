@@ -11,12 +11,13 @@ import {
   useMap,
 } from "@vis.gl/react-google-maps";
 import { openStateAt, type OpenState } from "@/lib/opening-hours";
-import type { ListRow, PlaceStatus } from "@/lib/types";
-import { STATUS_LABELS } from "./usePlacesTable";
+import type { ListRow } from "@/lib/types";
 
 type Props = {
   apiKey: string | null;
   mapId: string;
+  /** The list's icon from Google Maps, drawn on every pin; null for a plain pin. */
+  icon: string | null;
   /** Already filtered by the table — the map shows exactly what the table shows. */
   rows: ListRow[];
   now: Date | null;
@@ -26,17 +27,12 @@ type Props = {
 
 type Located = ListRow & { latLng: google.maps.LatLngLiteral };
 
-/** Pin colours follow your own status, so the map doubles as a progress view. */
-const PIN_COLORS: Record<PlaceStatus, { background: string; border: string }> = {
-  none: { background: "#ea4335", border: "#b31412" },
-  want: { background: "#2563eb", border: "#1e40af" },
-  visited: { background: "#059669", border: "#065f46" },
-  skip: { background: "#94a3b8", border: "#64748b" },
-};
+/** Google's own pin red, used for lists that have no icon of their own. */
+const PIN = { background: "#ea4335", border: "#b31412" };
 
 const WORLD = { lat: 20, lng: 0 };
 
-export default function PlacesMap({ apiKey, mapId, rows, now, selectedId, onSelect }: Props) {
+export default function PlacesMap({ apiKey, mapId, icon, rows, now, selectedId, onSelect }: Props) {
   const located = useMemo(
     () =>
       rows.flatMap((row): Located[] =>
@@ -67,7 +63,6 @@ export default function PlacesMap({ apiKey, mapId, rows, now, selectedId, onSele
         >
           {located.map((row) => {
             const isSelected = row.id === selectedId;
-            const colors = PIN_COLORS[row.status];
             return (
               <AdvancedMarker
                 key={row.id}
@@ -76,12 +71,16 @@ export default function PlacesMap({ apiKey, mapId, rows, now, selectedId, onSele
                 zIndex={isSelected ? 1000 : undefined}
                 onClick={() => onSelect(row.id)}
               >
-                <Pin
-                  background={colors.background}
-                  borderColor={colors.border}
-                  glyphColor="#ffffff"
-                  scale={isSelected ? 1.35 : 1}
-                />
+                {icon ? (
+                  <IconMarker icon={icon} selected={isSelected} />
+                ) : (
+                  <Pin
+                    background={PIN.background}
+                    borderColor={PIN.border}
+                    glyphColor="#ffffff"
+                    scale={isSelected ? 1 : 0.75}
+                  />
+                )}
               </AdvancedMarker>
             );
           })}
@@ -89,7 +88,7 @@ export default function PlacesMap({ apiKey, mapId, rows, now, selectedId, onSele
           {selected && (
             <InfoWindow
               position={selected.latLng}
-              pixelOffset={[0, -46]}
+              pixelOffset={[0, -40]}
               headerContent={<strong className="text-sm text-slate-900">{selected.place.name}</strong>}
               onCloseClick={() => onSelect(null)}
               shouldFocus={false}
@@ -101,8 +100,6 @@ export default function PlacesMap({ apiKey, mapId, rows, now, selectedId, onSele
           <FitToPlaces places={located} />
           <PanToSelection place={selected} />
         </Map>
-
-        <Legend />
 
         {unplaced > 0 && (
           <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-[var(--surface)]/90 px-2.5 py-1 text-xs text-[var(--muted)] shadow">
@@ -117,7 +114,7 @@ export default function PlacesMap({ apiKey, mapId, rows, now, selectedId, onSele
 /**
  * Re-frames the map whenever the set of visible places changes — which is what
  * makes a filter visibly "apply" to the map. Keyed on the ids rather than the
- * array, so editing a note or status doesn't yank the view around.
+ * array, so editing a note or tag doesn't yank the view around.
  */
 function FitToPlaces({ places }: { places: Located[] }) {
   const map = useMap();
@@ -192,7 +189,6 @@ function PlaceCard({ row, state }: { row: Located; state: OpenState }) {
 
       {p.formattedAddress && <p className="text-slate-500">{p.formattedAddress}</p>}
       {row.sourceNote && <p className="italic text-slate-600">“{row.sourceNote}”</p>}
-      {row.status !== "none" && <p className="text-slate-600">{STATUS_LABELS[row.status]}</p>}
 
       <div className="flex gap-3 pt-1">
         {href && (
@@ -210,18 +206,23 @@ function PlaceCard({ row, state }: { row: Located; state: OpenState }) {
   );
 }
 
-function Legend() {
+/**
+ * How Google Maps draws places saved to a list: the list's emoji in a small
+ * white disc. Selection enlarges it and adds a ring, rather than changing the
+ * icon, so you can still tell which list a pin came from.
+ */
+function IconMarker({ icon, selected }: { icon: string; selected: boolean }) {
   return (
-    <div className="pointer-events-none absolute bottom-6 left-3 flex flex-wrap gap-x-3 gap-y-1 rounded-md bg-[var(--surface)]/90 px-2.5 py-1.5 text-xs text-[var(--muted)] shadow">
-      {(Object.keys(PIN_COLORS) as PlaceStatus[]).map((s) => (
-        <span key={s} className="inline-flex items-center gap-1.5">
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full"
-            style={{ background: PIN_COLORS[s].background }}
-          />
-          {s === "none" ? "No status" : STATUS_LABELS[s]}
-        </span>
-      ))}
+    <div
+      className={`flex items-center justify-center rounded-full border bg-white shadow-md transition-transform duration-150 ${
+        selected
+          ? "h-9 w-9 border-blue-600 text-xl ring-2 ring-blue-600/40"
+          : "h-7 w-7 border-slate-300 text-[15px] hover:scale-110"
+      }`}
+    >
+      <span aria-hidden="true" className="leading-none">
+        {icon}
+      </span>
     </div>
   );
 }
