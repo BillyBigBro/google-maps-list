@@ -3,7 +3,7 @@
  *
  *   npm run test:hours
  */
-import { hasSchedule, openStateAt } from "../src/lib/opening-hours";
+import { hasSchedule, openStateAt, openStateOn } from "../src/lib/opening-hours";
 import type { OpeningHours } from "../src/lib/types";
 
 let failures = 0;
@@ -90,6 +90,14 @@ console.log("\nfalling back to the viewer's clock when the offset is unknown");
 // still produces a definite answer rather than a specific one.
 const fallback = openStateAt(MON_9_TO_17, null, utc("2026-08-10T12:00"));
 check("still answers open or closed", fallback === "open" || fallback === "closed", fallback);
+
+console.log("\nopen at a chosen day and time (place-local)");
+check("open Monday at noon", openStateOn(MON_9_TO_17, 1, 12 * 60) === "open");
+check("closed Monday at 5 PM sharp", openStateOn(MON_9_TO_17, 1, 17 * 60) === "closed");
+check("closed Tuesday at noon", openStateOn(MON_9_TO_17, 2, 12 * 60) === "closed");
+check("Friday-night bar open Saturday 1 AM", openStateOn(FRI_NIGHT, 6, 60) === "open");
+check("Saturday-night period open Sunday 1 AM", openStateOn(SAT_NIGHT, 0, 60) === "open");
+check("unknown without a schedule", openStateOn(null, 1, 600) === "unknown");
 
 console.log(
   failures === 0 ? "\nAll opening-hours checks passed.\n" : `\n${failures} check(s) FAILED.\n`,

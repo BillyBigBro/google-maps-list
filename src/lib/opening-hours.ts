@@ -77,3 +77,19 @@ function coversMinute(period: OpeningPeriod, nowMinute: number): boolean {
   const wrapped = nowMinute + MINUTES_PER_WEEK;
   return wrapped >= start && wrapped < end;
 }
+
+/**
+ * Whether a place is open at a given weekday and time *in its own local
+ * time* — "open Saturday at 7 PM" means 7 PM wherever the place is, which is
+ * what someone planning a visit means. `day` is 0 = Sunday, like Google.
+ */
+export function openStateOn(
+  hours: OpeningHours | null | undefined,
+  day: number,
+  minuteOfDay: number,
+): OpenState {
+  const periods = hours?.periods;
+  if (!periods || periods.length === 0) return "unknown";
+  const weekMinute = day * MINUTES_PER_DAY + minuteOfDay;
+  return periods.some((p) => coversMinute(p, weekMinute)) ? "open" : "closed";
+}

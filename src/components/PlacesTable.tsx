@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { flexRender, type Cell, type Table } from "@tanstack/react-table";
-import type { PlacesTableMeta } from "./usePlacesTable";
+import type { OpenFilter, PlacesTableMeta } from "./usePlacesTable";
 import { hasSchedule } from "@/lib/opening-hours";
 import type { ListRow } from "@/lib/types";
 
@@ -22,7 +22,7 @@ export default function PlacesTable({ table, totalCount, selectedId, onSelect }:
 
   const categoryColumn = table.getColumn("category");
   const openColumn = table.getColumn("openNow");
-  const openOnly = openColumn?.getFilterValue() === "open";
+  const openFilter = (openColumn?.getFilterValue() as OpenFilter | undefined) ?? null;
 
   const categoryCounts = categoryColumn?.getFacetedUniqueValues();
   const selectedCategories = (categoryColumn?.getFilterValue() as string[] | undefined) ?? [];
@@ -59,18 +59,10 @@ export default function PlacesTable({ table, totalCount, selectedId, onSelect }:
           className="min-w-0 flex-1 basis-40 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm outline-none transition-colors duration-150 hover:border-[var(--border-strong)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
         />
 
-        <button
-          onClick={() => openColumn?.setFilterValue(openOnly ? undefined : "open")}
-          aria-pressed={openOnly}
-          title="Only show places open right now, in each place's own local time"
-          className={`cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
-            openOnly
-              ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-              : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
-          }`}
-        >
-          {openOnly ? "● Open now" : "Open now"}
-        </button>
+        <OpenTimeFilter
+          value={openFilter}
+          onChange={(v) => openColumn?.setFilterValue(v ?? undefined)}
+        />
 
         <div className="relative">
           <button
@@ -239,10 +231,10 @@ export default function PlacesTable({ table, totalCount, selectedId, onSelect }:
                   colSpan={table.getVisibleLeafColumns().length}
                   className="px-3 py-8 text-center text-[var(--muted)]"
                 >
-                  {openOnly && withSchedule === 0 ? (
+                  {openFilter && withSchedule === 0 ? (
                     <>
                       None of these places have opening hours stored yet, so
-                      &ldquo;Open now&rdquo; can&apos;t tell. Use{" "}
+                      the open-time filter can&apos;t tell. Use{" "}
                       <strong className="text-[var(--foreground)]">Re-fetch all</strong> to load them.
                     </>
                   ) : (
@@ -387,6 +379,151 @@ function renderCell(cell: Cell<ListRow, unknown>, table: Table<ListRow>): ReactN
     default:
       return value == null || value === "" ? <Dash /> : <span>{String(value)}</span>;
   }
+}
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** "19:30" ⇄ 1170 for the native time input. */
+const toTimeInput = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const fromTimeInput = (v: string) => {
+  const [h, m] = v.split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+};
+
+/** 1170 → "7:30 PM" */
+function formatMinute(m: number): string {
+  const h24 = Math.floor(m / 60);
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const mm = m % 60;
+  return `${h12}${mm ? `:${String(mm).padStart(2, "0")}` : ""} ${h24 < 12 ? "AM" : "PM"}`;
+}
+
+/**
+ * The clock button: filter to places open right now, or open at a chosen
+ * weekday and time. Times are each place's own local time.
+ */
+function OpenTimeFilter({
+  value,
+  onChange,
+}: {
+  value: OpenFilter | null;
+  onChange: (v: OpenFilter | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // The picker remembers its last day/time, defaulting to today at 7 PM.
+  const [day, setDay] = useState(() => new Date().getDay());
+  const [minute, setMinute] = useState(19 * 60);
+
+  const label =
+    value?.mode === "now"
+      ? "Open now"
+      : value?.mode === "at"
+        ? `${DAYS[value.day].slice(0, 3)} ${formatMinute(value.minute)}`
+        : null;
+
+  const applyAt = (d: number, m: number) => onChange({ mode: "at", day: d, minute: m });
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={label ? `Open-time filter: ${label}` : "Filter by opening time"}
+        title="Filter by opening time"
+        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+          value
+            ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+            : open
+              ? "border-[var(--accent)] bg-[var(--surface-active)]"
+              : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+        {label && <span className="whitespace-nowrap">{label}</span>}
+      </button>
+
+      {open && (
+        <>
+          {/* Click-away target so the menu closes like a real popover. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-[var(--border)] bg-[var(--surface)] p-2 text-sm shadow-lg">
+            <button
+              onClick={() => {
+                onChange(value?.mode === "now" ? null : { mode: "now" });
+                setOpen(false);
+              }}
+              className={`flex w-full cursor-pointer items-center justify-between rounded px-2 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-hover)] ${
+                value?.mode === "now" ? "font-medium text-emerald-700 dark:text-emerald-300" : ""
+              }`}
+            >
+              Open now
+              {value?.mode === "now" && <span aria-hidden="true">✓</span>}
+            </button>
+
+            <div className="mt-1 border-t border-[var(--border)] px-2 pt-2">
+              <p className={`mb-1.5 ${value?.mode === "at" ? "font-medium text-emerald-700 dark:text-emerald-300" : ""}`}>
+                Open at a specific time
+              </p>
+              <div className="flex gap-2">
+                <select
+                  value={day}
+                  onChange={(e) => {
+                    const d = Number(e.target.value);
+                    setDay(d);
+                    applyAt(d, minute);
+                  }}
+                  className="min-w-0 flex-1 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 outline-none focus:border-[var(--accent)]"
+                >
+                  {DAYS.map((name, i) => (
+                    <option key={name} value={i}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="time"
+                  step={900}
+                  value={toTimeInput(minute)}
+                  onChange={(e) => {
+                    const m = fromTimeInput(e.target.value);
+                    if (m == null) return;
+                    setMinute(m);
+                    applyAt(day, m);
+                  }}
+                  className="w-[7.5rem] rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+              {value?.mode !== "at" && (
+                <button
+                  onClick={() => applyAt(day, minute)}
+                  className="mt-2 cursor-pointer text-xs text-[var(--accent)] hover:underline"
+                >
+                  Apply
+                </button>
+              )}
+              <p className="mt-2 text-xs text-[var(--muted)]">In each place&apos;s local time.</p>
+            </div>
+
+            {value && (
+              <button
+                onClick={() => {
+                  onChange(null);
+                  setOpen(false);
+                }}
+                className="mt-2 w-full cursor-pointer rounded border-t border-[var(--border)] px-2 pt-2 text-left text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+              >
+                Clear time filter
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function Muted({ value }: { value: string | null | undefined }) {

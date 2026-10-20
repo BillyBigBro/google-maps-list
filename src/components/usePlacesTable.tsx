@@ -15,10 +15,24 @@ import {
   type Table,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { hasSchedule, openStateAt } from "@/lib/opening-hours";
+import { hasSchedule, openStateAt, openStateOn } from "@/lib/opening-hours";
 import type { ListRow } from "@/lib/types";
 
 const column = createColumnHelper<ListRow>();
+
+/** The clock filter: open right now, or open at a chosen weekday and time. */
+export type OpenFilter = { mode: "now" } | { mode: "at"; day: number; minute: number };
+
+/**
+ * "now" reuses the column's live open/closed value, so it stays correct as
+ * the clock ticks. "at" checks each place's schedule at that weekday and
+ * time in the place's own local time. Places with no stored hours never
+ * match, since we can't say they'll be open.
+ */
+const openAtFilter: FilterFn<ListRow> = (row, id, filter: OpenFilter) =>
+  filter.mode === "now"
+    ? row.getValue(id) === "open"
+    : openStateOn(row.original.place.openingHours, filter.day, filter.minute) === "open";
 
 /**
  * Category filter: the value is the list of ticked categories, and a place
@@ -103,7 +117,7 @@ export function usePlacesTable(
           now && hasSchedule(r.place.openingHours)
             ? openStateAt(r.place.openingHours, r.place.utcOffsetMinutes, now)
             : "unknown",
-        { id: "openNow", header: "Open now", filterFn: "equalsString" },
+        { id: "openNow", header: "Open now", filterFn: openAtFilter },
       ),
       column.accessor((r) => r.place.openingHours?.weekdayDescriptions.join("\n"), {
         id: "hours",
@@ -137,8 +151,14 @@ export function usePlacesTable(
     [now],
   );
 
+  // TanStack caches each row's column values until `data` changes, so the
+  // time-dependent "open now" value would freeze at whatever it was on first
+  // render (before the clock is even set). A new array each tick invalidates
+  // that cache; the row objects themselves are unchanged.
+  const data = useMemo(() => (now ? [...rows] : rows), [rows, now]);
+
   const table = useReactTable({
-    data: rows,
+    data,
     columns,
     state: { sorting, columnFilters, globalFilter, columnVisibility },
     onSortingChange: setSorting,
